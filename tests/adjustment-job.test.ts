@@ -1,0 +1,160 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import type { PrismaClient } from "@prisma/client";
+import type { AdjustmentRule } from "../app/services/price-calculator.ts";
+import type { VariantData } from "../app/services/product-filter.server.ts";
+
+// Install an in-memory database double before importing the job pipeline. No
+// development-store database or Shopify catalog is touched by these tests.
+const unexpectedCall = async (_args: any): Promise<any> => {
+  throw new Error("Unexpected database call");
+};
+const prisma = {
+  priceJob: {
+    create: unexpectedCall,
+    findUnique: unexpectedCall,
+    update: unexpectedCall,
+  },
+  priceSnapshot: { createMany: unexpectedCall },
+  auditLog: { create: unexpectedCall },
+};
+globalThis.prisma = prisma as unknown as PrismaClient;
+const { createJob, executeJob } =
+  await import("../app/services/job-manager.server.ts");
+
+test("Job creation and execution preserve compare-at-only rules and snapshot only changes", async (t) => {
+  let job: any;
+  const snapshots: any[] = [];
+  const updates: any[] = [];
+  t.mock.method(prisma.priceJob, "create", async ({ data }: any) => {
+    job = { ...data, id: "fixture-job" };
+    return job;
+  });
+  t.mock.method(prisma.priceJob, "findUnique", async () => job);
+  t.mock.method(prisma.priceJob, "update", async ({ data }: any) => {
+    Object.assign(job, data);
+    return job;
+  });
+  t.mock.method(prisma.priceSnapshot, "createMany", async ({ data }: any) => {
+    snapshots.push(...data);
+    return { count: data.length };
+  });
+  t.mock.method(prisma.auditLog, "create", async () => ({}));
+  const rule: AdjustmentRule = {
+    adjustmentType: "set",
+    adjustmentDirection: "increase",
+    adjustmentValue: 35,
+    roundingMode: "none",
+    compareAtMode: "unchanged",
+    priceTargets: ["compareAtPrice"],
+  };
+  const id = await createJob({
+    shop: "fixture.myshopify.com",
+    rule,
+    filters: {
+      matchMode: "all",
+      conditions: [{ field: "vendor", operator: "equals", value: "Example" }],
+    },
+  });
+  const original: VariantData = {
+    id: "gid://shopify/ProductVariant/1",
+    numericId: "1",
+    productId: "gid://shopify/Product/1",
+    productTitle: "T-Shirt",
+    title: "Small",
+    price: "20.00",
+    compareAtPrice: null,
+    sku: null,
+    inventoryQuantity: 5,
+  };
+  const admin = {
+    graphql: async (_query: string, { variables }: any) => {
+      updates.push(...variables.variants);
+      return {
+        json: async () => ({
+          data: {
+            productVariantsBulkUpdate: {
+              productVariants: variables.variants,
+              userErrors: [],
+            },
+          },
+        }),
+      };
+    },
+  };
+  await executeJob(id, admin, "fixture.myshopify.com", [
+    original,
+    {
+      ...original,
+      id: "gid://shopify/ProductVariant/2",
+      numericId: "2",
+      compareAtPrice: "35.00",
+    },
+  ]);
+  assert.equal(job.status, "completed");
+  assert.equal(job.totalVariants, 1);
+  assert.equal(updates.length, 1);
+  assert.equal(updates[0].price, "20.00");
+  assert.equal(updates[0].compareAtPrice, "35.00");
+  assert.equal(snapshots.length, 1);
+  assert.equal(snapshots[0].originalCompareAtPrice, null);
+  assert.equal(snapshots[0].newCompareAtPrice, "35.00");
+});
+
+test("Execution rechecks safeguards before any snapshot or Shopify mutation", async (t) => {
+  let status = "pending";
+  t.mock.method(prisma.priceJob, "findUnique", async () => ({
+    id: "guard-job",
+    shop: "fixture.myshopify.com",
+    adjustmentType: "fixed",
+    adjustmentDirection: "decrease",
+    adjustmentValue: 19,
+    roundingMode: "none",
+    compareAtMode: "unchanged",
+    minPriceFloor: 5,
+    maxPriceCeiling: null,
+    guardBypassed: false,
+    filters: JSON.stringify({ conditions: [], priceTargets: ["price"] }),
+  }));
+  t.mock.method(prisma.priceJob, "update", async ({ data }: any) => {
+    if (data.status) status = data.status;
+    return {};
+  });
+  t.mock.method(prisma.auditLog, "create", async () => ({}));
+  const snapshot = t.mock.method(
+    prisma.priceSnapshot,
+    "createMany",
+    async () => {
+      throw new Error("Must not snapshot");
+    },
+  );
+  let mutations = 0;
+  await assert.rejects(
+    executeJob(
+      "guard-job",
+      {
+        graphql: async () => {
+          mutations++;
+        },
+      },
+      "fixture.myshopify.com",
+      [
+        {
+          id: "gid://shopify/ProductVariant/1",
+          numericId: "1",
+          productId: "gid://shopify/Product/1",
+          productTitle: "T-Shirt",
+          title: "Small",
+          price: "20.00",
+          compareAtPrice: null,
+          sku: null,
+          inventoryQuantity: 5,
+        },
+      ],
+    ),
+    /safeguards/,
+  );
+  assert.equal(status, "failed");
+  assert.equal(mutations, 0);
+  assert.equal(snapshot.mock.callCount(), 0);
+});

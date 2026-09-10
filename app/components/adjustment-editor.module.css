@@ -1,0 +1,497 @@
+.editor {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding-bottom: 32px;
+  color: #303030;
+}
+.card {
+  background: #fff;
+  border: 1px solid #dedede;
+  border-radius: 12px;
+  padding: 20px;
+  box-shadow: 0 1px 0 #0000000a;
+}
+.editor h2,
+.editor h3 {
+  font-size: 14px;
+  line-height: 20px;
+  font-weight: 650;
+  margin: 0;
+}
+.sectionHeading {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+}
+.pill {
+  display: inline-block;
+  padding: 2px 8px;
+  background: #f1f2f3;
+  color: #616161;
+  font-size: 11px;
+  line-height: 18px;
+  font-weight: 500;
+  border-radius: 6px;
+}
+.matchRow {
+  border: 0;
+  padding: 0 0 20px;
+  margin: 20px 0 16px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 20px;
+  border-bottom: 1px solid #ebebeb;
+  font-size: 13px;
+}
+.matchRow > span {
+  color: #616161;
+}
+.matchRow label,
+.targets label,
+.checkLabel {
+  display: inline-flex;
+  gap: 8px;
+  align-items: center;
+  cursor: pointer;
+}
+.editor input[type="radio"],
+.editor input[type="checkbox"] {
+  accent-color: #303030;
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+  margin: 0;
+}
+.conditionList {
+  display: grid;
+  gap: 10px;
+  margin-bottom: 16px;
+}
+.conditionRow {
+  display: grid;
+  grid-template-columns:
+    minmax(150px, 1fr) minmax(160px, 1fr) minmax(190px, 1.65fr)
+    28px;
+  gap: 10px;
+  align-items: center;
+  padding: 10px 12px;
+  background: #f7f8fa;
+  border: 1px solid #e1e3e5;
+  border-radius: 8px;
+}
+.conditionRow > *,
+.conditionValue {
+  min-width: 0;
+}
+.editor select,
+.editor input:not([type="checkbox"]):not([type="radio"]) {
+  width: 100%;
+  min-height: 34px;
+  border: 1px solid #8a8a8a;
+  border-radius: 7px;
+  background: #fff;
+  color: #303030;
+  padding: 6px 10px;
+  font: inherit;
+  font-size: 13px;
+  box-sizing: border-box;
+}
+.editor select {
+  padding-right: 24px;
+  cursor: pointer;
+}
+.editor input::placeholder {
+  color: #777;
+}
+.editor input:focus-visible,
+.editor select:focus-visible,
+.editor button:focus-visible,
+.advanced summary:focus-visible {
+  outline: 2px solid #005bd3;
+  outline-offset: 2px;
+}
+.deleteButton {
+  background: none;
+  border: 0;
+  color: #b42336;
+  width: 28px;
+  height: 34px;
+  padding: 4px;
+  cursor: pointer;
+  display: grid;
+  place-items: center;
+  border-radius: 5px;
+}
+.deleteButton:hover {
+  background: #ffebed;
+}
+.secondaryButton,
+.primaryButton {
+  border: 1px solid #d4d4d4;
+  background: #fff;
+  color: #303030;
+  box-shadow: 0 1px 0 #0000000d;
+  padding: 6px 12px;
+  min-height: 32px;
+  border-radius: 8px;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 550;
+  cursor: pointer;
+  white-space: nowrap;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+}
+.secondaryButton:hover {
+  background: #f7f7f7;
+}
+.primaryButton {
+  background: #303030;
+  border-color: #303030;
+  color: #fff;
+  box-shadow: inset 0 1px 0 #ffffff26;
+}
+.primaryButton:hover {
+  background: #1a1a1a;
+}
+.primaryButton:disabled,
+.secondaryButton:disabled {
+  cursor: default;
+  background: #e3e3e3;
+  border-color: #e3e3e3;
+  color: #898989;
+  box-shadow: none;
+}
+.actionCard {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 16px;
+  padding-top: 16px;
+  padding-bottom: 16px;
+}
+.actionControls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 12px;
+  flex: 1;
+}
+.actionControls > label,
+.guardInputs > label {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  font-size: 13px;
+}
+.actionSelect {
+  min-width: 240px;
+}
+.amountInput {
+  width: 150px;
+}
+.roundSelect {
+  min-width: 210px;
+}
+.targets {
+  display: flex;
+  gap: 16px;
+  flex-wrap: wrap;
+  border: none;
+  padding: 7px 0;
+  margin: 0;
+  min-height: 34px;
+  align-items: center;
+  font-size: 13px;
+}
+.actionButtons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding-bottom: 1px;
+}
+.previewCard {
+  padding: 0;
+  overflow: hidden;
+}
+.previewHeading {
+  background: #fafafa;
+  padding: 16px 18px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+  border-bottom: 1px solid #e5e7eb;
+}
+.previewHeading h2 {
+  font-size: 13px;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+.liveDot {
+  width: 7px;
+  height: 7px;
+  background: #267b60;
+  border-radius: 50%;
+  flex-shrink: 0;
+  box-shadow: 0 0 0 3px #e4f3ed;
+}
+.currency {
+  font-size: 11px;
+  font-weight: 600;
+  color: #616161;
+}
+.tableScroll {
+  width: 100%;
+  overflow-x: auto;
+}
+.previewTable {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+.previewTable th {
+  background: #f7f8fa;
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+  padding: 12px;
+  text-align: left;
+  color: #454545;
+}
+.previewTable td {
+  padding: 7px 12px;
+  vertical-align: middle;
+  border-top: 1px solid #e1e3e5;
+}
+.previewTable th:nth-child(n + 4),
+.previewTable td:nth-child(n + 4) {
+  text-align: right;
+  border-left: 1px solid #e1e3e5;
+  min-width: 145px;
+}
+.previewTable th:nth-child(n + 6) {
+  background: #eff6fc;
+}
+.previewTable th:first-child,
+.previewTable td:first-child {
+  width: 36px;
+  text-align: center;
+  padding-right: 3px;
+  color: #8a8a8a;
+}
+.previewTable th:nth-child(2),
+.previewTable td:nth-child(2) {
+  width: 58px;
+  padding-right: 3px;
+}
+.productCell {
+  min-width: 235px;
+  width: 35%;
+}
+.productCell strong {
+  display: block;
+  font-weight: 600;
+  line-height: 17px;
+}
+.productCell > span {
+  display: block;
+  color: #616161;
+  font-size: 11px;
+  line-height: 16px;
+}
+.productImage,
+.imagePlaceholder {
+  width: 38px;
+  height: 38px;
+  object-fit: contain;
+  border: 1px solid #e7e7e7;
+  border-radius: 7px;
+  background: #fff;
+  display: block;
+}
+.imagePlaceholder {
+  display: grid;
+  place-items: center;
+  font-size: 22px;
+  color: #9299a0;
+  background: #f5f6f7;
+}
+.changedPrice {
+  color: #146b50;
+  font-weight: 650;
+  background: #f8fcfa;
+}
+.breachedRow td {
+  background: #fff8e8;
+}
+.productCell .guardLabel {
+  color: #9b5300;
+  font-weight: 550;
+}
+.tableFooter {
+  padding: 12px 18px;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  border-top: 1px solid #e1e3e5;
+  color: #616161;
+  font-size: 12px;
+}
+.pagination {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.emptyState {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  text-align: center;
+  padding: 48px 20px;
+  min-height: 220px;
+}
+.emptyState p {
+  max-width: 440px;
+  font-size: 13px;
+  line-height: 21px;
+  color: #616161;
+}
+.emptyIcon {
+  display: grid;
+  place-items: center;
+  font-size: 32px;
+  border-radius: 12px;
+  width: 50px;
+  height: 50px;
+  color: #657985;
+  background: #f0f4f7;
+  margin-bottom: 4px;
+}
+.advanced summary {
+  cursor: pointer;
+  font-weight: 600;
+  font-size: 13px;
+}
+.advanced summary > span {
+  margin-left: 8px;
+  color: #777;
+  font-size: 12px;
+  font-weight: 400;
+}
+.advancedGrid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 32px;
+  border-top: 1px solid #ebebeb;
+  margin-top: 18px;
+  padding-top: 18px;
+}
+.advancedGrid h3 {
+  margin-bottom: 12px;
+}
+.guardInputs {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  margin: 14px 0;
+}
+.hint {
+  font-size: 12px;
+  line-height: 20px;
+  color: #616161;
+  margin: 0;
+}
+.checkLabel {
+  font-size: 13px;
+  line-height: 20px;
+}
+.bottomNote {
+  color: #767676;
+  text-align: center;
+  font-size: 12px;
+  line-height: 20px;
+  padding: 4px 12px;
+}
+.noOptions {
+  padding: 12px;
+  color: #616161;
+  font-size: 13px;
+}
+.srOnly {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+@media (max-width: 900px) {
+  .conditionRow {
+    grid-template-columns: 1fr 1fr 28px;
+  }
+  .conditionValue {
+    grid-column: 1 / 3;
+    grid-row: 2;
+  }
+  .deleteButton {
+    grid-column: 3;
+    grid-row: 1 / 3;
+  }
+  .advancedGrid {
+    grid-template-columns: 1fr;
+  }
+}
+@media (max-width: 550px) {
+  .card {
+    padding: 16px;
+  }
+  .previewCard {
+    padding: 0;
+  }
+  .matchRow {
+    gap: 12px;
+  }
+  .matchRow > span {
+    width: 100%;
+  }
+  .actionControls,
+  .actionButtons {
+    width: 100%;
+  }
+  .actionSelect,
+  .roundSelect {
+    width: 100%;
+  }
+  .amountInput {
+    flex: 1;
+  }
+  .actionButtons > button {
+    flex: 1;
+  }
+  .conditionRow {
+    padding: 10px;
+    gap: 8px;
+  }
+  .guardInputs {
+    grid-template-columns: 1fr;
+  }
+  .previewHeading h2 {
+    font-size: 12px;
+  }
+}

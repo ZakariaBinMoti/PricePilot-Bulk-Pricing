@@ -1,0 +1,47 @@
+import type { ActionFunctionArgs } from "react-router";
+import { authenticate } from "../shopify.server";
+import prisma from "../db.server";
+
+export const action = async ({ request }: ActionFunctionArgs) => {
+  const { topic, shop, session, admin, payload } =
+    await authenticate.webhook(request);
+
+  if (!admin && topic !== "SHOP_REDACT") {
+    // The admin context isn't returned if the webhook fired after a shop was uninstalled.
+    throw new Response();
+  }
+
+  switch (topic) {
+    case "APP_UNINSTALLED":
+      if (session) {
+        // Clean up session data
+        await prisma.session.deleteMany({ where: { shop } });
+        // Clean up app data for this shop
+        await prisma.auditLog.deleteMany({ where: { shop } });
+        // Delete snapshots through cascade (jobs → snapshots)
+        await prisma.priceJob.deleteMany({ where: { shop } });
+      }
+      break;
+    case "APP_SCOPES_UPDATE":
+      // Handle scope changes if needed
+      console.log(`Scopes updated for shop: ${shop}`);
+      break;
+    case "CUSTOMERS_DATA_REQUEST":
+      // Price Adjuster does not store customer personal data.
+      // Respond with 200 OK to acknowledge the request.
+      break;
+    case "CUSTOMERS_REDACT":
+      // Price Adjuster does not store customer personal data.
+      // Respond with 200 OK to acknowledge the request.
+      break;
+    case "SHOP_REDACT":
+      // Shop data deletion request — purge all data for this shop
+      await prisma.auditLog.deleteMany({ where: { shop } });
+      await prisma.priceJob.deleteMany({ where: { shop } });
+      break;
+    default:
+      throw new Response("Unhandled webhook topic", { status: 404 });
+  }
+
+  throw new Response();
+};

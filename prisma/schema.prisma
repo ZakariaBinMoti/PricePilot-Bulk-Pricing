@@ -1,0 +1,130 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+// Note that some adapters may set a maximum length for the String type by default, please ensure your strings are long
+// enough when changing adapters.
+// See https://www.prisma.io/docs/orm/reference/prisma-schema-reference#string for more information
+datasource db {
+  provider = "sqlite"
+  url      = "file:dev.sqlite"
+}
+
+// Shopify session storage — required by @shopify/shopify-app-session-storage-prisma
+model Session {
+  id            String    @id
+  shop          String
+  state         String
+  isOnline      Boolean   @default(false)
+  scope         String?
+  expires       DateTime?
+  accessToken   String
+  userId        BigInt?
+  firstName     String?
+  lastName      String?
+  email         String?
+  accountOwner  Boolean   @default(false)
+  locale        String?
+  collaborator        Boolean?  @default(false)
+  emailVerified       Boolean?  @default(false)
+  refreshToken        String?
+  refreshTokenExpires DateTime?
+}
+
+// Store subscription status for Freemium model
+model Subscription {
+  id              String    @id @default(uuid())
+  shop            String    @unique
+  plan            String    @default("FREE") // FREE | PRO
+  status          String    @default("ACTIVE") // ACTIVE | CANCELLED | EXPIRED | FROZEN
+  shopifyChargeId String?   // Shopify AppSubscription GID
+  currentPeriodEnd DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  @@index([shop])
+}
+
+// Tracks each bulk price adjustment job
+model PriceJob {
+  id                  String    @id @default(uuid())
+  shop                String
+  status              String    @default("pending") // pending | scheduled | processing | completed | failed | rolled_back | cancelled
+  adjustmentType      String    // percentage | fixed
+  adjustmentDirection String    // increase | decrease
+  adjustmentValue     Float     // The numeric value (e.g., 20 for 20%, 10.00 for $10)
+  roundingMode        String    @default("none") // none | .99 | .95 | .00 | nearest_10
+  compareAtMode       String    @default("set") // set | clear | unchanged
+  filters             String    // JSON string of applied filters
+  totalVariants       Int       @default(0)
+  processedVariants   Int       @default(0)
+  failedVariants      Int       @default(0)
+  errorLog            String?   // JSON string of errors
+
+  // ⏰ Scheduling feature (Paid / Pro feature)
+  isScheduled         Boolean   @default(false)
+  scheduledStartAt    DateTime?
+  scheduledEndAt      DateTime?
+  autoRevert          Boolean   @default(false) // Auto rollback when scheduledEndAt arrives
+  scheduleStatus      String?   // pending_start | sale_active | pending_revert | completed | cancelled
+
+  // 🛡️ Price Floor & Ceiling Safeguards
+  minPriceFloor       Float?    // Minimum price safeguard (e.g. 1.00)
+  maxPriceCeiling     Float?    // Maximum price safeguard (e.g. 1000.00)
+  guardBypassed       Boolean   @default(false)
+  guardWarningLogged  String?   // Warnings recorded upon confirmation
+
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+  completedAt         DateTime?
+
+  // Relation to snapshots
+  snapshots           PriceSnapshot[]
+  auditLogs           AuditLog[]
+
+  @@index([shop])
+  @@index([status])
+  @@index([isScheduled])
+  @@index([scheduledStartAt])
+  @@index([scheduledEndAt])
+  @@index([createdAt])
+}
+
+// Stores pre-update prices for rollback capability
+model PriceSnapshot {
+  id                    String  @id @default(uuid())
+  jobId                 String
+  variantId             String  // Shopify numeric variant ID
+  variantGid            String  // Shopify GID (gid://shopify/ProductVariant/xxx)
+  productTitle          String
+  variantTitle          String
+  originalPrice         String  // Stored as string to preserve exact decimal representation
+  originalCompareAtPrice String? // Stored as string
+  newPrice              String  // The calculated new price
+  newCompareAtPrice     String? // The calculated new compare-at price
+
+  job                   PriceJob @relation(fields: [jobId], references: [id], onDelete: Cascade)
+
+  @@index([jobId])
+  @@index([variantId])
+}
+
+// Immutable audit trail for all price operations
+model AuditLog {
+  id          String   @id @default(uuid())
+  shop        String
+  jobId       String?
+  action      String   // adjustment_applied | adjustment_rolled_back | adjustment_failed | sale_scheduled | sale_auto_reverted
+  performedBy String?  // Staff member name/email if available
+  details     String   // JSON string with operation details
+  timestamp   DateTime @default(now())
+
+  job         PriceJob? @relation(fields: [jobId], references: [id], onDelete: SetNull)
+
+  @@index([shop])
+  @@index([jobId])
+  @@index([timestamp])
+}

@@ -1,0 +1,27 @@
+.index {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-height: 100vh;
+  background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
+}
+
+.content {
+  text-align: center;
+  max-width: 540px;
+  padding: 48px 32px;
+}
+
+.heading {
+  font-size: 3rem;
+  font-weight: 800;
+  color: #fff;
+  margin-bottom: 16px;
+  letter-spacing: -0.025em;
+}
+
+.text {
+  font-size: 1.125rem;
+  color: rgba(255, 255, 255, 0.7);
+  line-height: 1.7;
+}

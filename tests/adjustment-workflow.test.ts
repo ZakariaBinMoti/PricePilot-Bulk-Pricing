@@ -19,6 +19,7 @@ import {
 import { executeDirectUpdates } from "../app/services/bulk-updater.server.ts";
 import {
   serializeJobFilters,
+  readJobCampaignName,
   readJobTargets,
 } from "../app/services/job-configuration.ts";
 import {
@@ -297,8 +298,10 @@ test("Extended pricing targets survive job serialization; legacy jobs use their 
   const encoded = serializeJobFilters(
     filter(condition("vendor", "equals", "North Studio")),
     { ...baseRule, priceTargets: ["compareAtPrice"] },
+    "Spring refresh",
   );
   assert.deepEqual(readJobTargets(encoded), ["compareAtPrice"]);
+  assert.equal(readJobCampaignName(encoded), "Spring refresh");
   assert.equal(JSON.parse(encoded).conditions[0].value, "North Studio");
   assert.equal(readJobTargets('{"vendor":"North Studio"}'), undefined);
 });
@@ -321,6 +324,7 @@ test("Preview fingerprint detects changed matches and prices, independent of ord
 
 test("Scheduling rejects missing ends, past starts, reversed dates, and Free-plan requests", () => {
   const input: AdjustmentSubmission = {
+    campaignName: "Scheduled sale",
     filters: filter(),
     rule: baseRule,
     previewFingerprint: "test",
@@ -331,6 +335,10 @@ test("Scheduling rejects missing ends, past starts, reversed dates, and Free-pla
   };
   const now = new Date("2030-01-01T00:00:00Z");
   assert.deepEqual(validateSubmission(input, true, now), []);
+  assert.deepEqual(
+    validateSubmission({ ...input, campaignName: "" }, true, now),
+    [],
+  );
   assert.ok(
     validateSubmission(input, false, now).some((error) =>
       error.includes("Pro"),

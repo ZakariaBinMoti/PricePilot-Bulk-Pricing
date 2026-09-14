@@ -116,6 +116,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
 
     const jobId = await createJob({
       shop: session.shop,
+      campaignName: submission.campaignName,
       rule: submission.rule,
       filters,
       minPriceFloor: submission.rule.minPriceFloor,

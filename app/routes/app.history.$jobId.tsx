@@ -1,5 +1,11 @@
 import type { LoaderFunctionArgs, ActionFunctionArgs } from "react-router";
-import { useLoaderData, useSubmit, useNavigation, useRevalidator } from "react-router";
+import {
+  useLoaderData,
+  useSubmit,
+  useNavigation,
+  useRevalidator,
+  useSearchParams,
+} from "react-router";
 import {
   Page,
   Layout,
@@ -16,15 +22,20 @@ import {
   Modal,
   Box,
   DescriptionList,
+  TextField,
 } from "@shopify/polaris";
 import { useState, useEffect } from "react";
 import { authenticate } from "../shopify.server";
-import { getJob, executeRollback } from "../services/job-manager.server";
+import {
+  getJob,
+  executeRollback,
+  updateJobCampaignName,
+} from "../services/job-manager.server";
 import { cancelScheduledJob } from "../services/scheduler.server";
 import { loadSnapshot, getSnapshotStats } from "../services/snapshot.server";
 import { formatPriceDisplay, describeAdjustment } from "../services/price-calculator";
 import { describeConditions } from "../services/product-conditions";
-import { readJobTargets } from "../services/job-configuration";
+import { readJobCampaignName, readJobTargets } from "../services/job-configuration";
 
 export const loader = async ({ request, params }: LoaderFunctionArgs) => {
   const { admin, session } = await authenticate.admin(request);
@@ -77,6 +88,22 @@ export const action = async ({ request, params }: ActionFunctionArgs) => {
       return Response.json({
         success: false,
         message: error instanceof Error ? error.message : "Failed to cancel schedule",
+      });
+    }
+  }
+
+  if (intent === "rename_campaign") {
+    try {
+      await updateJobCampaignName(
+        jobId,
+        session.shop,
+        String(formData.get("campaignName") || ""),
+      );
+      return Response.json({ success: true, message: "Campaign name updated." });
+    } catch (error) {
+      return Response.json({
+        success: false,
+        message: error instanceof Error ? error.message : "Unable to update campaign name.",
       });
     }
   }
@@ -136,9 +163,15 @@ export default function JobDetailPage() {
     useLoaderData<typeof loader>();
   const submit = useSubmit();
   const navigation = useNavigation();
+  const [searchParams] = useSearchParams();
   const isLoading = navigation.state === "submitting";
 
   const [showRollbackModal, setShowRollbackModal] = useState(false);
+  const [showCampaignModal, setShowCampaignModal] = useState(
+    () => searchParams.get("editCampaign") === "1",
+  );
+  const [campaignDraft, setCampaignDraft] = useState("");
+  const [campaignError, setCampaignError] = useState("");
 
   const canRollback = job.status === "completed" && totalSnapshots > 0;
   const isProcessing = job.status === "processing" || job.status === "pending";
@@ -156,6 +189,11 @@ export default function JobDetailPage() {
 
   const ruleText = describeAdjustment(job);
   const priceTargets = readJobTargets(job.filters);
+  const campaignName = readJobCampaignName(job.filters);
+
+  useEffect(() => {
+    if (showCampaignModal) setCampaignDraft(campaignName || "");
+  }, [showCampaignModal, campaignName]);
 
   const handleRollback = () => {
     const formData = new FormData();
@@ -170,12 +208,35 @@ export default function JobDetailPage() {
     submit(formData, { method: "post" });
   };
 
+  const openCampaignEditor = () => {
+    setCampaignDraft(campaignName || "");
+    setCampaignError("");
+    setShowCampaignModal(true);
+  };
+
+  const saveCampaignName = () => {
+    const name = campaignDraft.trim();
+    if (!name) {
+      setCampaignError("Enter a campaign name.");
+      return;
+    }
+    const formData = new FormData();
+    formData.set("intent", "rename_campaign");
+    formData.set("campaignName", name);
+    submit(formData, { method: "post" });
+    setShowCampaignModal(false);
+  };
+
   return (
     <Page
-      title={`Adjustment: ${ruleText}`}
-      subtitle={`Created ${formatDate(job.createdAt)}`}
+      title={campaignName || `Adjustment: ${ruleText}`}
+      subtitle={`${campaignName ? `${ruleText} • ` : ""}Created ${formatDate(job.createdAt)}`}
       backAction={{ url: "/app/history" }}
       secondaryActions={[
+        {
+          content: campaignName ? "Rename campaign" : "Name campaign",
+          onAction: openCampaignEditor,
+        },
         ...(canRollback
           ? [
               {
@@ -256,6 +317,7 @@ export default function JobDetailPage() {
 
                 <DescriptionList
                   items={[
+                    { term: "Campaign", description: campaignName || "Untitled adjustment" },
                     { term: "Rule", description: ruleText },
                     { term: "Price fields", description: priceTargets?.map((target) => target === "price" ? "Main Price" : "Compare-at Price").join(", ") || "Main Price with compare-at synchronization" },
                     {
@@ -459,6 +521,43 @@ export default function JobDetailPage() {
             </BlockStack>
           </Card>
         )}
+
+        <Modal
+          open={showCampaignModal}
+          onClose={() => {
+            setShowCampaignModal(false);
+            setCampaignError("");
+          }}
+          title={campaignName ? "Rename campaign" : "Name campaign"}
+          primaryAction={{
+            content: "Save name",
+            onAction: saveCampaignName,
+            loading: isLoading,
+          }}
+          secondaryActions={[
+            {
+              content: "Cancel",
+              onAction: () => {
+                setShowCampaignModal(false);
+                setCampaignError("");
+              },
+            },
+          ]}
+        >
+          <Modal.Section>
+            <TextField
+              label="Campaign name"
+              value={campaignDraft}
+              onChange={(nextValue) => {
+                setCampaignDraft(nextValue);
+                setCampaignError("");
+              }}
+              autoComplete="off"
+              maxLength={120}
+              error={campaignError || undefined}
+            />
+          </Modal.Section>
+        </Modal>
 
         {/* Rollback Confirmation Modal */}
         <Modal

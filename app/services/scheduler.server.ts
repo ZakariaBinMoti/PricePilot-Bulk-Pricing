@@ -9,13 +9,19 @@
  */
 
 import prisma from "../db.server";
-import { executeJob, executeRollback, updateJobStatus } from "./job-manager.server";
+import {
+  executeJob,
+  executeRollback,
+  resolveCampaignName,
+  updateJobStatus,
+} from "./job-manager.server";
 import type { AdjustmentRule } from "./price-calculator";
 import type { ProductFilters } from "./product-filter.server";
 import { serializeJobFilters } from "./job-configuration";
 
 export interface ScheduleOptions {
   shop: string;
+  campaignName?: string;
   rule: AdjustmentRule;
   filters: ProductFilters;
   scheduledStartAt: Date;
@@ -30,6 +36,10 @@ export interface ScheduleOptions {
  * Schedule a future price adjustment job.
  */
 export async function schedulePriceAdjustment(options: ScheduleOptions): Promise<string> {
+  const campaignName = await resolveCampaignName(
+    options.shop,
+    options.campaignName,
+  );
   const job = await prisma.priceJob.create({
     data: {
       shop: options.shop,
@@ -39,7 +49,7 @@ export async function schedulePriceAdjustment(options: ScheduleOptions): Promise
       adjustmentValue: options.rule.adjustmentValue,
       roundingMode: options.rule.roundingMode,
       compareAtMode: options.rule.compareAtMode,
-      filters: serializeJobFilters(options.filters, options.rule),
+      filters: serializeJobFilters(options.filters, options.rule, campaignName),
       isScheduled: true,
       scheduledStartAt: options.scheduledStartAt,
       scheduledEndAt: options.scheduledEndAt,

@@ -225,18 +225,25 @@ test(
         }),
       ),
     );
+    const button = (text) =>
+      [...container.querySelectorAll("button")].find((item) =>
+        item.textContent.includes(text),
+      );
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 300));
+    });
+    assert.deepEqual(filters.conditions, []);
+    await act(() => button("Add a filter").click());
     const input = container.querySelector('[role="combobox"]');
     await act(() => input.focus());
     await type(input, "Su");
     assert.equal(input.value, "Su");
     await act(() => container.querySelector('[role="option"]').click());
-    const button = (text) =>
-      [...container.querySelectorAll("button")].find((item) =>
-        item.textContent.includes(text),
-      );
-    await act(() => button("Apply Filters").click());
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 300));
+    });
     assert.equal(filters.conditions[0].value, "Summer");
-    await act(() => button("Add another condition").click());
+    await act(() => button("Add another filter").click());
     assert.equal(container.querySelectorAll('[role="combobox"]').length, 2);
     const amount = container.querySelector('input[type="number"]');
     await type(amount, "15");

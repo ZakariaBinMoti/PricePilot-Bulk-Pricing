@@ -3,6 +3,7 @@ import { validateFilters, type ProductFilters } from "./product-conditions.ts";
 import type { VariantData } from "./product-filter.server";
 
 export interface AdjustmentSubmission {
+  campaignName: string;
   filters: ProductFilters;
   rule: AdjustmentRule;
   previewFingerprint: string;

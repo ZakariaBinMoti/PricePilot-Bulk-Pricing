@@ -6,10 +6,32 @@ import type { ProductFilters } from "./product-conditions";
 export function serializeJobFilters(
   filters: ProductFilters,
   rule: AdjustmentRule,
+  campaignName?: string,
 ): string {
-  return JSON.stringify({ ...filters, priceTargets: rule.priceTargets });
+  return JSON.stringify({
+    ...filters,
+    priceTargets: rule.priceTargets,
+    campaignName: campaignName?.trim() || undefined,
+  });
 }
 
 export function readJobTargets(filtersJson: string): PriceTarget[] | undefined {
   return JSON.parse(filtersJson).priceTargets;
+}
+
+export function readJobCampaignName(filtersJson: string): string | undefined {
+  const campaignName = JSON.parse(filtersJson).campaignName;
+  return typeof campaignName === "string" && campaignName.trim()
+    ? campaignName
+    : undefined;
+}
+
+export function withJobCampaignName(
+  filtersJson: string,
+  campaignName: string,
+): string {
+  return JSON.stringify({
+    ...JSON.parse(filtersJson),
+    campaignName: campaignName.trim(),
+  });
 }

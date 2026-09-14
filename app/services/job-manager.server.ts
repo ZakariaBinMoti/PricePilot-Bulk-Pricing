@@ -21,10 +21,15 @@ import {
 } from "./price-calculator.ts";
 import { executeDirectUpdates, type UpdateItem } from "./bulk-updater.server.ts";
 import { captureSnapshot, loadSnapshot, buildRollbackData } from "./snapshot.server.ts";
-import { readJobTargets, serializeJobFilters } from "./job-configuration.ts";
+import {
+  readJobTargets,
+  serializeJobFilters,
+  withJobCampaignName,
+} from "./job-configuration.ts";
 
 export interface CreateJobInput {
   shop: string;
+  campaignName?: string;
   rule: AdjustmentRule;
   filters: ProductFilters;
   minPriceFloor?: number | null;
@@ -37,6 +42,17 @@ export interface CreateJobInput {
   autoRevert?: boolean;
 }
 
+export async function resolveCampaignName(
+  shop: string,
+  candidate?: string,
+): Promise<string> {
+  const campaignName = candidate?.trim();
+  if (campaignName) return campaignName;
+
+  const existingJobs = await prisma.priceJob.count({ where: { shop } });
+  return `Adjustment ${existingJobs + 1}`;
+}
+
 /**
  * Create a new price adjustment job in the database.
  */
@@ -45,6 +61,7 @@ export async function createJob(input: CreateJobInput): Promise<string> {
     throw new Error("The scheduled start must still be in the future. Choose a later time.");
   }
   const isScheduled = input.isScheduled && input.scheduledStartAt && input.scheduledStartAt > new Date();
+  const campaignName = await resolveCampaignName(input.shop, input.campaignName);
 
   const job = await prisma.priceJob.create({
     data: {
@@ -55,7 +72,7 @@ export async function createJob(input: CreateJobInput): Promise<string> {
       adjustmentValue: input.rule.adjustmentValue,
       roundingMode: input.rule.roundingMode,
       compareAtMode: input.rule.compareAtMode,
-      filters: serializeJobFilters(input.filters, input.rule),
+      filters: serializeJobFilters(input.filters, input.rule, campaignName),
       minPriceFloor: input.minPriceFloor,
       maxPriceCeiling: input.maxPriceCeiling,
       guardBypassed: input.guardBypassed ?? false,
@@ -103,6 +120,24 @@ export async function getJob(jobId: string) {
         select: { snapshots: true },
       },
     },
+  });
+}
+
+export async function updateJobCampaignName(
+  jobId: string,
+  shop: string,
+  campaignName: string,
+): Promise<void> {
+  const name = campaignName.trim();
+  if (!name) throw new Error("Enter a campaign name.");
+  if (name.length > 120) throw new Error("Campaign names must be 120 characters or fewer.");
+
+  const job = await getJob(jobId);
+  if (!job || job.shop !== shop) throw new Error("Adjustment not found or unauthorized.");
+
+  await prisma.priceJob.update({
+    where: { id: jobId },
+    data: { filters: withJobCampaignName(job.filters, name) },
   });
 }
 

@@ -184,14 +184,27 @@
   flex: 1;
 }
 .actionControls > label,
-.guardInputs > label {
+.guardInputs > label,
+.campaignInput {
   display: flex;
   flex-direction: column;
   gap: 5px;
   font-size: 13px;
 }
+.campaignInput {
+  max-width: 480px;
+}
+.campaignInput > span {
+  font-weight: 600;
+}
+.campaignInput + .hint {
+  margin-top: 8px;
+}
 .actionSelect {
-  min-width: 240px;
+  min-width: 180px;
+}
+.amountTypeSelect {
+  min-width: 160px;
 }
 .amountInput {
   width: 150px;
@@ -475,6 +488,7 @@
     width: 100%;
   }
   .actionSelect,
+  .amountTypeSelect,
   .roundSelect {
     width: 100%;
   }

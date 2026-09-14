@@ -12,6 +12,7 @@ const unexpectedCall = async (_args: any): Promise<any> => {
 const prisma = {
   priceJob: {
     create: unexpectedCall,
+    count: unexpectedCall,
     findUnique: unexpectedCall,
     update: unexpectedCall,
   },
@@ -30,6 +31,7 @@ test("Job creation and execution preserve compare-at-only rules and snapshot onl
     job = { ...data, id: "fixture-job" };
     return job;
   });
+  t.mock.method(prisma.priceJob, "count", async () => 4);
   t.mock.method(prisma.priceJob, "findUnique", async () => job);
   t.mock.method(prisma.priceJob, "update", async ({ data }: any) => {
     Object.assign(job, data);
@@ -92,6 +94,7 @@ test("Job creation and execution preserve compare-at-only rules and snapshot onl
     },
   ]);
   assert.equal(job.status, "completed");
+  assert.equal(JSON.parse(job.filters).campaignName, "Adjustment 5");
   assert.equal(job.totalVariants, 1);
   assert.equal(updates.length, 1);
   assert.equal(updates[0].price, "20.00");

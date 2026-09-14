@@ -42,13 +42,15 @@ interface EditorProps {
   onApply: (submission: AdjustmentSubmission) => void;
 }
 
-const ACTIONS = [
-  { value: "percentage_increase", label: "Increase by percentage (+%)" },
-  { value: "percentage_decrease", label: "Decrease by percentage (−%)" },
-  { value: "fixed_increase", label: "Increase by fixed amount (+)" },
-  { value: "fixed_decrease", label: "Decrease by fixed amount (−)" },
+const OPERATIONS = [
+  { value: "increase", label: "Increase" },
+  { value: "decrease", label: "Decrease" },
   { value: "set", label: "Set to fixed price" },
   { value: "round", label: "Round prices" },
+] as const;
+const AMOUNT_TYPES = [
+  { value: "percentage", label: "Percentage" },
+  { value: "fixed", label: "Fixed amount" },
 ] as const;
 const ROUNDING = [
   { value: ".99", label: "End in .99" },
@@ -86,11 +88,18 @@ export function AdjustmentEditor({
   onApply,
 }: EditorProps) {
   const nextId = useRef(1);
+  const onPreviewRef = useRef(onPreview);
   const [conditions, setConditions] = useState<
     (ProductCondition & { id: number })[]
-  >([{ id: 0, field: "tag", operator: "equals", value: "" }]);
+  >([]);
   const [matchMode, setMatchMode] = useState<"all" | "any">("all");
-  const [action, setAction] = useState<string>("percentage_increase");
+  const [campaignName, setCampaignName] = useState("");
+  const [operation, setOperation] = useState<
+    "increase" | "decrease" | "set" | "round"
+  >("increase");
+  const [amountType, setAmountType] = useState<"percentage" | "fixed">(
+    "percentage",
+  );
   const [value, setValue] = useState("");
   const [rounding, setRounding] = useState<RoundingMode>(".99");
   const [targets, setTargets] = useState<PriceTarget[]>(["price"]);
@@ -106,6 +115,10 @@ export function AdjustmentEditor({
   const [localErrors, setLocalErrors] = useState<string[]>([]);
   const [page, setPage] = useState(1);
 
+  useEffect(() => {
+    onPreviewRef.current = onPreview;
+  }, [onPreview]);
+
   const filters = useMemo<ProductFilters>(
     () => ({
       matchMode,
@@ -118,23 +131,17 @@ export function AdjustmentEditor({
   const rule = useMemo<AdjustmentRule>(
     () => ({
       adjustmentType:
-        action === "set" || action === "round"
-          ? action
-          : action.startsWith("percentage")
-            ? "percentage"
-            : "fixed",
-      adjustmentDirection: action.endsWith("decrease")
-        ? "decrease"
-        : "increase",
+        operation === "set" || operation === "round" ? operation : amountType,
+      adjustmentDirection: operation === "decrease" ? "decrease" : "increase",
       adjustmentValue:
-        action === "round" ? 0 : value.trim() ? Number(value) : NaN,
-      roundingMode: action === "round" ? rounding : "none",
+        operation === "round" ? 0 : value.trim() ? Number(value) : NaN,
+      roundingMode: operation === "round" ? rounding : "none",
       compareAtMode: "unchanged",
       priceTargets: targets,
       minPriceFloor: enableGuards && floor.trim() ? Number(floor) : null,
       maxPriceCeiling: enableGuards && ceiling.trim() ? Number(ceiling) : null,
     }),
-    [action, value, rounding, targets, enableGuards, floor, ceiling],
+    [operation, amountType, value, rounding, targets, enableGuards, floor, ceiling],
   );
   const ruleKey = JSON.stringify(rule);
   const ruleErrors = validateRule(rule);
@@ -163,17 +170,32 @@ export function AdjustmentEditor({
     page * PAGE_SIZE,
   );
   const busy = loadingPreview || applying;
-  const canApply = currentPreview && validRule && changedCount > 0 && !busy;
+  const canApply =
+    currentPreview &&
+    validRule &&
+    changedCount > 0 &&
+    !busy;
   const money = (price: string | null) =>
     price === null ? "—" : formatPriceDisplay(price, currencyCode);
   const missingCompareAt =
     targets.includes("compareAtPrice") &&
-    action !== "set" &&
+    operation !== "set" &&
     variants.some((variant) => variant.compareAtPrice === null);
 
   useEffect(() => {
     setPage(1);
   }, [preview]);
+  useEffect(() => {
+    // An empty condition list deliberately previews the entire catalog. Once a
+    // complete condition is chosen, the same automatic request refreshes the
+    // table with only matching variants.
+    if (validateFilters(filters).length) return;
+    const timer = window.setTimeout(() => {
+      setConfirmOpen(false);
+      onPreviewRef.current(filters);
+    }, 250);
+    return () => window.clearTimeout(timer);
+  }, [filtersKey]);
   useEffect(() => {
     setGuardBypassed(false);
     setConfirmOpen(false);
@@ -185,6 +207,7 @@ export function AdjustmentEditor({
     start,
     end,
     autoRevert,
+    campaignName,
     preview?.fingerprint,
   ]);
 
@@ -202,20 +225,13 @@ export function AdjustmentEditor({
         : [...current, target],
     );
   }
-  function applyFilters() {
-    const validation = validateFilters(filters);
-    setLocalErrors(validation);
-    if (!validation.length) {
-      setConfirmOpen(false);
-      onPreview(filters);
-    }
-  }
   function submission(): AdjustmentSubmission {
     const iso = (date: string) =>
       date && Number.isFinite(new Date(date).getTime())
         ? new Date(date).toISOString()
         : null;
     return {
+      campaignName: campaignName.trim(),
       filters,
       rule,
       previewFingerprint: preview?.fingerprint ?? "",
@@ -251,6 +267,22 @@ export function AdjustmentEditor({
           </Banner>
         )}
 
+        <section className={styles.card} aria-labelledby="campaign-heading">
+          <label className={styles.campaignInput}>
+            <span id="campaign-heading">Campaign name</span>
+            <input
+              type="text"
+              maxLength={120}
+              placeholder="e.g. Holiday sale 2026"
+              value={campaignName}
+              onChange={(event) => setCampaignName(event.target.value)}
+            />
+          </label>
+          <p className={styles.hint}>
+            Use a clear name to find this adjustment in your audit history.
+          </p>
+        </section>
+
         <section className={styles.card} aria-labelledby="conditions-heading">
           <div className={styles.sectionHeading}>
             <h2 id="conditions-heading">Conditions</h2>
@@ -259,7 +291,7 @@ export function AdjustmentEditor({
               {conditions.length === 1 ? "condition" : "conditions"}
             </span>
           </div>
-          <fieldset className={styles.matchRow}>
+          {conditions.length > 1 && <fieldset className={styles.matchRow}>
             <legend className={styles.srOnly}>How products should match</legend>
             <span>Products must match:</span>
             <label>
@@ -280,7 +312,7 @@ export function AdjustmentEditor({
               />{" "}
               any condition
             </label>
-          </fieldset>
+          </fieldset>}
           <div className={styles.conditionList}>
             {conditions.map((condition, index) => (
               <div className={styles.conditionRow} key={condition.id}>
@@ -406,7 +438,8 @@ export function AdjustmentEditor({
               ])
             }
           >
-            <span aria-hidden="true">＋</span> Add another condition
+            <span aria-hidden="true">＋</span>{" "}
+            {conditions.length ? "Add another filter" : "Add a filter"}
           </button>
         </section>
 
@@ -416,19 +449,44 @@ export function AdjustmentEditor({
         >
           <div className={styles.actionControls}>
             <label className={styles.actionSelect}>
-              <span>Price Action Type</span>
+              <span>Price action</span>
               <select
-                value={action}
-                onChange={(event) => setAction(event.target.value)}
+                value={operation}
+                onChange={(event) =>
+                  setOperation(
+                    event.target.value as
+                      | "increase"
+                      | "decrease"
+                      | "set"
+                      | "round",
+                  )
+                }
               >
-                {ACTIONS.map((item) => (
+                {OPERATIONS.map((item) => (
                   <option key={item.value} value={item.value}>
                     {item.label}
                   </option>
                 ))}
               </select>
             </label>
-            {action === "round" ? (
+            {(operation === "increase" || operation === "decrease") && (
+              <label className={styles.amountTypeSelect}>
+                <span>Adjustment</span>
+                <select
+                  value={amountType}
+                  onChange={(event) =>
+                    setAmountType(event.target.value as "percentage" | "fixed")
+                  }
+                >
+                  {AMOUNT_TYPES.map((item) => (
+                    <option key={item.value} value={item.value}>
+                      {item.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            )}
+            {operation === "round" ? (
               <label className={styles.roundSelect}>
                 <span>Rounding</span>
                 <select
@@ -447,8 +505,8 @@ export function AdjustmentEditor({
             ) : (
               <label className={styles.amountInput}>
                 <span>
-                  Value{" "}
-                  {action.startsWith("percentage")
+                  {operation === "set" ? "New price" : "Value"}{" "}
+                  {operation !== "set" && amountType === "percentage"
                     ? "(%)"
                     : `(${currencyCode})`}
                 </span>
@@ -485,14 +543,6 @@ export function AdjustmentEditor({
           <div className={styles.actionButtons}>
             <button
               type="button"
-              className={styles.secondaryButton}
-              onClick={applyFilters}
-              disabled={busy}
-            >
-              {loadingPreview ? "Loading products…" : "Apply Filters"}
-            </button>
-            <button
-              type="button"
               className={styles.primaryButton}
               disabled={!canApply}
               onClick={review}
@@ -509,13 +559,13 @@ export function AdjustmentEditor({
         {preview && !currentPreview && (
           <Banner tone="warning">
             <p>
-              Conditions changed. Apply filters again to refresh the product
-              list before making changes.
+              Complete the filter value to refresh the product list. Changes
+              are applied automatically once a filter is valid.
             </p>
           </Banner>
         )}
         {!validRule &&
-          (value !== "" || targets.length === 0 || action === "round") && (
+          (value !== "" || targets.length === 0 || operation === "round") && (
             <Banner tone="warning">
               <p>{ruleErrors.join(" ")}</p>
             </Banner>
@@ -552,10 +602,11 @@ export function AdjustmentEditor({
               <div className={styles.emptyIcon} aria-hidden="true">
                 ⌕
               </div>
-              <h3>Find products to adjust</h3>
+              <h3>{loadingPreview ? "Loading products" : "No products found"}</h3>
               <p>
-                Build your conditions above, then select Apply Filters to see
-                matching products and their prices.
+                {loadingPreview
+                  ? "Loading your catalog and its current prices…"
+                  : "Your catalog preview will appear here automatically."}
               </p>
             </div>
           ) : variants.length === 0 ? (

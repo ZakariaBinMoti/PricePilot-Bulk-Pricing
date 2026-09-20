@@ -1,19 +1,23 @@
 import type { LoaderFunctionArgs } from "react-router";
-import { useLoaderData, Link } from "react-router";
+import { Link, useLoaderData } from "react-router";
+import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import {
   Page,
   Card,
   BlockStack,
   DataTable,
   Badge,
-  Button,
   Pagination,
   EmptyState,
+  Icon,
 } from "@shopify/polaris";
+import { MenuVerticalIcon } from "@shopify/polaris-icons";
 import { authenticate } from "../shopify.server";
 import { getJobsForShop } from "../services/job-manager.server";
 import { describeAdjustment } from "../services/price-calculator";
 import { readJobCampaignName } from "../services/job-configuration";
+import styles from "../components/history-actions.module.css";
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
   const { session } = await authenticate.admin(request);
@@ -49,7 +53,9 @@ function formatDate(dateString: string) {
 }
 
 function formatRule(job: any) {
-  if (job.adjustmentType === "set" || job.adjustmentType === "round") return describeAdjustment(job);
+  if (job.adjustmentType === "set" || job.adjustmentType === "round") {
+    return describeAdjustment(job);
+  }
   const direction = job.adjustmentDirection === "increase" ? "+" : "-";
   if (job.adjustmentType === "percentage") return `${direction}${job.adjustmentValue}%`;
   return `${direction}$${job.adjustmentValue.toFixed(2)}`;
@@ -59,12 +65,120 @@ function formatFeatures(job: any) {
   const badges: string[] = [];
   if (job.isScheduled) badges.push("Scheduled");
   if (job.minPriceFloor || job.maxPriceCeiling) badges.push("Guards");
-  return badges.length > 0 ? badges.join(" • ") : "Standard";
+  return badges.length > 0 ? badges.join(" | ") : "Standard";
 }
 
-function formatCampaignAndRule(job: any) {
+function HistoryActions({ job }: { job: any }) {
   const campaignName = readJobCampaignName(job.filters);
-  return campaignName ? `${campaignName} — ${formatRule(job)}` : formatRule(job);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+  const [menuPosition, setMenuPosition] = useState<{
+    top: number;
+    left: number;
+  } | null>(null);
+
+  const closeMenu = () => setMenuPosition(null);
+
+  const toggleMenu = () => {
+    if (menuPosition) {
+      closeMenu();
+      return;
+    }
+
+    const trigger = triggerRef.current;
+    if (!trigger) return;
+
+    const rect = trigger.getBoundingClientRect();
+    const menuWidth = 176;
+    const menuHeight = 88;
+    const gap = 6;
+    const viewportPadding = 8;
+    const openAbove = rect.bottom + gap + menuHeight > window.innerHeight;
+
+    setMenuPosition({
+      top: openAbove ? rect.top - menuHeight - gap : rect.bottom + gap,
+      left: Math.min(
+        window.innerWidth - menuWidth - viewportPadding,
+        Math.max(viewportPadding, rect.right - menuWidth),
+      ),
+    });
+  };
+
+  useEffect(() => {
+    if (!menuPosition) return;
+
+    const handlePointerDown = (event: PointerEvent) => {
+      const target = event.target as Node;
+      if (
+        !triggerRef.current?.contains(target) &&
+        !menuRef.current?.contains(target)
+      ) {
+        closeMenu();
+      }
+    };
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        closeMenu();
+        triggerRef.current?.focus();
+      }
+    };
+
+    document.addEventListener("pointerdown", handlePointerDown);
+    document.addEventListener("keydown", handleKeyDown);
+    window.addEventListener("resize", closeMenu);
+    window.addEventListener("scroll", closeMenu, true);
+
+    return () => {
+      document.removeEventListener("pointerdown", handlePointerDown);
+      document.removeEventListener("keydown", handleKeyDown);
+      window.removeEventListener("resize", closeMenu);
+      window.removeEventListener("scroll", closeMenu, true);
+    };
+  }, [menuPosition]);
+
+  return (
+    <div className={styles.menu}>
+      <button
+        ref={triggerRef}
+        type="button"
+        className={styles.menuTrigger}
+        aria-label={`Actions for ${campaignName || "this adjustment"}`}
+        aria-haspopup="menu"
+        aria-expanded={Boolean(menuPosition)}
+        title="Actions"
+        onClick={toggleMenu}
+      >
+        <Icon source={MenuVerticalIcon} />
+      </button>
+      {menuPosition &&
+        createPortal(
+          <div
+            ref={menuRef}
+            className={styles.menuItems}
+            role="menu"
+            style={{ top: menuPosition.top, left: menuPosition.left }}
+          >
+            <Link
+              className={styles.menuItem}
+              role="menuitem"
+              to={`/app/history/${job.id}`}
+              onClick={closeMenu}
+            >
+              View details
+            </Link>
+            <Link
+              className={styles.menuItem}
+              role="menuitem"
+              to={`/app/history/${job.id}?editCampaign=1`}
+              onClick={closeMenu}
+            >
+              {campaignName ? "Rename campaign" : "Name campaign"}
+            </Link>
+          </div>,
+          document.body,
+        )}
+    </div>
+  );
 }
 
 export default function HistoryIndexPage() {
@@ -94,30 +208,35 @@ export default function HistoryIndexPage() {
         ) : (
           <Card>
             <DataTable
-              columnContentTypes={["text", "text", "text", "numeric", "text", "text", "text"]}
-              headings={["Date", "Campaign / Rule", "Type / Features", "Variants", "Rounding", "Status", "Action"]}
+              columnContentTypes={[
+                "text",
+                "text",
+                "text",
+                "text",
+                "numeric",
+                "text",
+                "text",
+                "text",
+              ]}
+              headings={[
+                "Campaign",
+                "Rule",
+                "Date",
+                "Type / Features",
+                "Variants",
+                "Rounding",
+                "Status",
+                "Actions",
+              ]}
               rows={jobs.map((job: any) => [
+                readJobCampaignName(job.filters) || "Untitled adjustment",
+                formatRule(job),
                 formatDate(job.createdAt),
-                formatCampaignAndRule(job),
                 formatFeatures(job),
                 job._count.snapshots.toString(),
-                job.roundingMode === "none" ? "—" : job.roundingMode,
+                job.roundingMode === "none" ? "-" : job.roundingMode,
                 <StatusBadge key={job.id} status={job.status} />,
-                <div
-                  key={`actions-${job.id}`}
-                  style={{ display: "flex", gap: "8px", whiteSpace: "nowrap" }}
-                >
-                  <Link to={`/app/history/${job.id}`}>
-                    <Button size="slim" variant="plain">
-                      Inspect & Rollback →
-                    </Button>
-                  </Link>
-                  <Link to={`/app/history/${job.id}?editCampaign=1`}>
-                    <Button size="slim" variant="plain">
-                      Rename
-                    </Button>
-                  </Link>
-                </div>,
+                <HistoryActions key={`actions-${job.id}`} job={job} />,
               ])}
             />
 

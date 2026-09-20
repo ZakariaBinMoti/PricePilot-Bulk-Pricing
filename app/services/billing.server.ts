@@ -120,15 +120,31 @@ export async function getShopSubscription(shop: string, admin?: any) {
     });
   }
 
-  // If admin client is passed and plan in DB is FREE or needs verification, optionally sync with Shopify
-  if (admin && sub.plan === "PRO") {
+  // Always reconcile the local record with Shopify when an authenticated Admin
+  // client is available. A successful trial may not return a charge_id, so the
+  // active subscription query is the source of truth.
+  if (admin) {
     try {
       const response = await admin.graphql(GET_CURRENT_SUBSCRIPTION);
       const data = await response.json();
       const activeSubs = data.data?.currentAppInstallation?.activeSubscriptions || [];
-      const hasActivePro = activeSubs.some((s: any) => s.status === "ACTIVE");
+      const activePro = activeSubs.find(
+        (s: any) => s.status === "ACTIVE" && s.name === PLANS.PRO.name,
+      );
 
-      if (!hasActivePro && sub.plan === "PRO") {
+      if (activePro) {
+        sub = await prisma.subscription.update({
+          where: { shop },
+          data: {
+            plan: "PRO",
+            status: "ACTIVE",
+            shopifyChargeId: activePro.id,
+            currentPeriodEnd: activePro.currentPeriodEnd
+              ? new Date(activePro.currentPeriodEnd)
+              : null,
+          },
+        });
+      } else if (sub.plan === "PRO") {
         sub = await prisma.subscription.update({
           where: { shop },
           data: { plan: "FREE", status: "CANCELLED" },

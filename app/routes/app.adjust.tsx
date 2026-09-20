@@ -20,7 +20,7 @@ import {
   type AdjustmentSubmission,
 } from "../services/adjustment-request";
 import { createJob, executeJob } from "../services/job-manager.server";
-import { getShopSubscription } from "../services/billing.server";
+import { getShopSubscription, PLANS } from "../services/billing.server";
 import { AdjustmentEditor } from "../components/adjustment-editor";
 import { previewFingerprint as fingerprint } from "../services/preview-fingerprint.server";
 
@@ -91,6 +91,19 @@ export const action = async ({ request }: ActionFunctionArgs) => {
         { errors: ["No variants match these conditions."] },
         { status: 400 },
       );
+    if (
+      !subscription.isPro &&
+      variants.length > PLANS.FREE.variantLimit
+    ) {
+      return Response.json(
+        {
+          errors: [
+            `The Free Starter plan supports up to ${PLANS.FREE.variantLimit} variants per adjustment. Upgrade to Pro to process more variants.`,
+          ],
+        },
+        { status: 403 },
+      );
+    }
     const calculations = variants.map((variant) =>
       calculateAdjustedPrice(
         variant.price,
@@ -104,6 +117,16 @@ export const action = async ({ request }: ActionFunctionArgs) => {
         { status: 400 },
       );
     const guards = summarizeGuardBreaches(calculations);
+    if (guards.hasBreaches && !subscription.isPro) {
+      return Response.json(
+        {
+          errors: [
+            "These prices breach your safeguards. The Free Starter plan cannot bypass safeguard warnings; upgrade to Pro or adjust the rule.",
+          ],
+        },
+        { status: 403 },
+      );
+    }
     if (guards.hasBreaches && submission.guardBypassed !== true)
       return Response.json(
         {

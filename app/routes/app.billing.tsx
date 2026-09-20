@@ -1,6 +1,6 @@
 import type { LoaderFunctionArgs, ActionFunctionArgs } from "react-router";
-import { useLoaderData, useSubmit, useNavigation } from "react-router";
-import { redirect } from "react-router";
+import { useActionData, useLoaderData, useSubmit, useNavigation } from "react-router";
+import { useEffect } from "react";
 import {
   Page,
   Layout,
@@ -64,8 +64,9 @@ export const action = async ({ request }: ActionFunctionArgs) => {
       return Response.json({ error: error || "Failed to create subscription" }, { status: 400 });
     }
 
-    // Redirect merchant to Shopify's confirmation screen
-    return redirect(confirmationUrl);
+    // Return the URL so the embedded page can navigate the top-level Admin
+    // window to Shopify's billing confirmation screen.
+    return Response.json({ confirmationUrl });
   }
 
   if (intent === "downgrade_free") {
@@ -78,9 +79,21 @@ export const action = async ({ request }: ActionFunctionArgs) => {
 
 export default function BillingPage() {
   const { subscription, plans, justUpgraded } = useLoaderData<typeof loader>();
+  const actionData = useActionData() as
+    | { confirmationUrl?: string; error?: string }
+    | undefined;
   const submit = useSubmit();
   const navigation = useNavigation();
   const isSubmitting = navigation.state === "submitting";
+
+  // Billing confirmation must open at the top level because this app is
+  // embedded inside Shopify Admin. A normal iframe navigation can appear to
+  // do nothing or leave the merchant on the billing page.
+  useEffect(() => {
+    if (actionData?.confirmationUrl) {
+      window.top?.location.assign(actionData.confirmationUrl);
+    }
+  }, [actionData]);
 
   const isPro = subscription.isPro;
 
@@ -103,6 +116,11 @@ export default function BillingPage() {
       backAction={{ url: "/app" }}
     >
       <BlockStack gap="500">
+        {actionData?.error && (
+          <Banner title="Unable to start the Pro trial" tone="critical">
+            <p>{actionData.error}</p>
+          </Banner>
+        )}
         {justUpgraded && (
           <Banner title="Welcome to PricePilot Pro! 🎉" tone="success">
             <p>

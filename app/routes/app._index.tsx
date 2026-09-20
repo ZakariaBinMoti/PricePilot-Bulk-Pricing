@@ -1,5 +1,5 @@
 import type { LoaderFunctionArgs } from "react-router";
-import { useLoaderData, Link } from "react-router";
+import { useLoaderData, useNavigate, Link } from "react-router";
 import {
   Page,
   Layout,
@@ -67,6 +67,7 @@ function formatRule(job: any) {
 
 export default function DashboardPage() {
   const { stats, subscription } = useLoaderData<typeof loader>();
+  const navigate = useNavigate();
 
   const hasJobs = stats.totalJobs > 0;
   const hasActiveJobs = stats.activeJobs.length > 0;
@@ -78,12 +79,12 @@ export default function DashboardPage() {
       subtitle="High-speed bulk price adjustments, sale scheduling & profit safeguards"
       primaryAction={{
         content: "⚡ New Adjustment",
-        url: "/app/adjust",
+        onAction: () => navigate("/app/adjust"),
       }}
       secondaryActions={[
         {
           content: "💳 Plans & Billing",
-          url: "/app/billing",
+          onAction: () => navigate("/app/billing"),
         },
       ]}
     >
@@ -219,7 +220,7 @@ export default function DashboardPage() {
                 image="https://cdn.shopify.com/s/files/1/0262/4071/2726/files/emptystate-files.png"
                 action={{
                   content: "Create your first adjustment",
-                  url: "/app/adjust",
+                  onAction: () => navigate("/app/adjust"),
                 }}
               >
                 <p>

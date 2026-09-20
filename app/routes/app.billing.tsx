@@ -1,5 +1,11 @@
 import type { LoaderFunctionArgs, ActionFunctionArgs } from "react-router";
-import { useActionData, useLoaderData, useSubmit, useNavigation } from "react-router";
+import {
+  useActionData,
+  useLoaderData,
+  useSubmit,
+  useNavigation,
+  useNavigate,
+} from "react-router";
 import { useEffect } from "react";
 import {
   Page,
@@ -84,6 +90,7 @@ export default function BillingPage() {
     | undefined;
   const submit = useSubmit();
   const navigation = useNavigation();
+  const navigate = useNavigate();
   const isSubmitting = navigation.state === "submitting";
 
   // Billing confirmation must open at the top level because this app is
@@ -113,7 +120,7 @@ export default function BillingPage() {
     <Page
       title="Plans & Billing"
       subtitle="Choose the right plan to power your store promotions"
-      backAction={{ url: "/app" }}
+      backAction={{ onAction: () => navigate("/app") }}
     >
       <BlockStack gap="500">
         {actionData?.error && (

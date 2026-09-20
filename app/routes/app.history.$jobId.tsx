@@ -5,6 +5,7 @@ import {
   useNavigation,
   useRevalidator,
   useSearchParams,
+  useNavigate,
 } from "react-router";
 import {
   Page,
@@ -159,6 +160,7 @@ function formatFilters(filtersJson: string): Array<{ term: string; description: 
 }
 
 export default function JobDetailPage() {
+  const navigate = useNavigate();
   const { job, snapshots, totalSnapshots, stats } =
     useLoaderData<typeof loader>();
   const submit = useSubmit();
@@ -231,7 +233,7 @@ export default function JobDetailPage() {
     <Page
       title={campaignName || `Adjustment: ${ruleText}`}
       subtitle={`${campaignName ? `${ruleText} • ` : ""}Created ${formatDate(job.createdAt)}`}
-      backAction={{ url: "/app/history" }}
+      backAction={{ onAction: () => navigate("/app/history") }}
       secondaryActions={[
         {
           content: campaignName ? "Rename campaign" : "Name campaign",

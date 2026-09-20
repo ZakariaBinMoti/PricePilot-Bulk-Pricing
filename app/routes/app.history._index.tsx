@@ -1,5 +1,5 @@
 import type { LoaderFunctionArgs } from "react-router";
-import { Link, useLoaderData } from "react-router";
+import { Link, useLoaderData, useNavigate } from "react-router";
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import {
@@ -183,13 +183,17 @@ function HistoryActions({ job }: { job: any }) {
 
 export default function HistoryIndexPage() {
   const { jobs, total, currentPage, totalPages } = useLoaderData<typeof loader>();
+  const navigate = useNavigate();
 
   return (
     <Page
       title="Price Adjustment & Audit History"
       subtitle={`${total} total adjustments & promotions recorded`}
-      backAction={{ url: "/app" }}
-      primaryAction={{ content: "New Adjustment", url: "/app/adjust" }}
+      backAction={{ onAction: () => navigate("/app") }}
+      primaryAction={{
+        content: "New Adjustment",
+        onAction: () => navigate("/app/adjust"),
+      }}
     >
       <BlockStack gap="500">
         {jobs.length === 0 ? (
@@ -197,7 +201,10 @@ export default function HistoryIndexPage() {
             <EmptyState
               heading="No adjustments recorded yet"
               image="https://cdn.shopify.com/s/files/1/0262/4071/2726/files/emptystate-files.png"
-              action={{ content: "Create your first adjustment", url: "/app/adjust" }}
+              action={{
+                content: "Create your first adjustment",
+                onAction: () => navigate("/app/adjust"),
+              }}
             >
               <p>
                 When you launch price adjustments or schedule flash sales, they'll
@@ -246,10 +253,10 @@ export default function HistoryIndexPage() {
                   hasPrevious={currentPage > 1}
                   hasNext={currentPage < totalPages}
                   onPrevious={() => {
-                    window.location.href = `/app/history?page=${currentPage - 1}`;
+                    navigate(`/app/history?page=${currentPage - 1}`);
                   }}
                   onNext={() => {
-                    window.location.href = `/app/history?page=${currentPage + 1}`;
+                    navigate(`/app/history?page=${currentPage + 1}`);
                   }}
                 />
               </div>

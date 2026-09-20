@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { Link, useNavigate } from "react-router";
 import { Banner, BlockStack, Checkbox, Modal, Page } from "@shopify/polaris";
 import {
   CONDITION_FIELDS,
@@ -87,6 +88,7 @@ export function AdjustmentEditor({
   onPreview,
   onApply,
 }: EditorProps) {
+  const navigate = useNavigate();
   const nextId = useRef(1);
   const onPreviewRef = useRef(onPreview);
   const [conditions, setConditions] = useState<
@@ -254,7 +256,7 @@ export function AdjustmentEditor({
       fullWidth
       title="New price adjustment"
       subtitle="Find the right products, choose an action, and review every price before applying."
-      backAction={{ url: "/app" }}
+      backAction={{ onAction: () => navigate("/app") }}
     >
       <div className={styles.editor}>
         {[...errors, ...localErrors].length > 0 && (
@@ -802,7 +804,7 @@ export function AdjustmentEditor({
               </h3>
               {!isPro ? (
                 <p className={styles.hint}>
-                  <a href="/app/billing">Upgrade to Pro</a> to schedule a future
+                  <Link to="/app/billing">Upgrade to Pro</Link> to schedule a future
                   adjustment and automatically restore prices.
                 </p>
               ) : (

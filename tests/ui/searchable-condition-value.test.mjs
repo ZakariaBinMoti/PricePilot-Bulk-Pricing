@@ -34,6 +34,7 @@ const { SearchableConditionValue } =
 const { AdjustmentEditor } =
   await import("../../app/components/adjustment-editor.tsx");
 const { AppProvider } = await import("@shopify/polaris");
+const { MemoryRouter } = await import("react-router");
 
 after(() => dom.window.close());
 
@@ -210,19 +211,23 @@ test(
     const container = await mount(
       t,
       React.createElement(
-        AppProvider,
-        { i18n: {} },
-        React.createElement(AdjustmentEditor, {
-          options,
-          currencyCode: "USD",
-          isPro: false,
-          loadingPreview: false,
-          applying: false,
-          onPreview: (value) => {
-            filters = value;
-          },
-          onApply() {},
-        }),
+        MemoryRouter,
+        null,
+        React.createElement(
+          AppProvider,
+          { i18n: {} },
+          React.createElement(AdjustmentEditor, {
+            options,
+            currencyCode: "USD",
+            isPro: false,
+            loadingPreview: false,
+            applying: false,
+            onPreview: (value) => {
+              filters = value;
+            },
+            onApply() {},
+          }),
+        ),
       ),
     );
     const button = (text) =>

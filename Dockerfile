@@ -7,5 +7,4 @@ COPY package*.json ./
 RUN npm ci --legacy-peer-deps
 
 COPY . .
-RUN npm run setup
 CMD ["npm", "run", "docker-start"]

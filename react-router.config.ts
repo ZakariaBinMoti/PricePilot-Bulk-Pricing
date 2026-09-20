@@ -1,6 +1,11 @@
 import type { Config } from "@react-router/dev/config";
 
-const appUrl = process.env.SHOPIFY_APP_URL || process.env.HOST;
+const appUrl =
+  process.env.SHOPIFY_APP_URL ||
+  process.env.RENDER_EXTERNAL_URL ||
+  (process.env.RENDER_EXTERNAL_HOSTNAME
+    ? `https://${process.env.RENDER_EXTERNAL_HOSTNAME}`
+    : process.env.HOST);
 const appHost = appUrl
   ? new URL(appUrl.includes("://") ? appUrl : `http://${appUrl}`).host
   : null;

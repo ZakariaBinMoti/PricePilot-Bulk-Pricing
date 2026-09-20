@@ -12,7 +12,12 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   const querySecret = url.searchParams.get("secret");
   const cronSecret = process.env.CRON_SECRET;
 
-  if (cronSecret && querySecret !== cronSecret && authHeader !== `Bearer ${cronSecret}`) {
+  if (!cronSecret) {
+    console.error("CRON_SECRET is not configured.");
+    return Response.json({ error: "Scheduler is not configured" }, { status: 503 });
+  }
+
+  if (querySecret !== cronSecret && authHeader !== `Bearer ${cronSecret}`) {
     return Response.json({ error: "Unauthorized" }, { status: 401 });
   }
 

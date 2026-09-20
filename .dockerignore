@@ -1,3 +1,11 @@
 node_modules
 .cache
 build
+.git
+.env
+.env.*
+!.env.example
+.react-router
+prisma/dev.sqlite
+prisma/dev.sqlite-journal
+npm-debug.log*

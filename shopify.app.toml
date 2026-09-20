@@ -10,20 +10,20 @@ embedded = true
 scopes = "read_products,write_products"
 
 [webhooks]
-api_version = "2026-10"
+api_version = "2026-07"
 
   [[webhooks.subscriptions]]
-  uri = "/webhooks/app/uninstalled"
+  uri = "/webhooks"
   topics = [ "app/uninstalled" ]
 
   [[webhooks.subscriptions]]
-  uri = "/webhooks/app/scopes_update"
+  uri = "/webhooks"
   topics = [ "app/scopes_update" ]
 
   [webhooks.privacy_compliance]
-  customer_data_request_url = "/webhooks/privacy/customer-data-request"
-  customer_deletion_url = "/webhooks/privacy/customer-redact"
-  shop_deletion_url = "/webhooks/privacy/shop-redact"
+  customer_data_request_url = "/webhooks"
+  customer_deletion_url = "/webhooks"
+  shop_deletion_url = "/webhooks"
 
 [auth]
 redirect_urls = [ "https://shopify.dev/apps/default-app-home/api/auth" ]

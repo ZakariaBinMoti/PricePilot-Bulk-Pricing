@@ -171,7 +171,9 @@ export async function createProSubscription(
   admin: any,
   shop: string,
   returnUrl: string,
-  isTest: boolean = process.env.NODE_ENV !== "production"
+  isTest: boolean =
+    process.env.SHOPIFY_BILLING_TEST === "true" ||
+    process.env.NODE_ENV !== "production"
 ): Promise<{ confirmationUrl: string | null; error: string | null }> {
   try {
     const response = await admin.graphql(APP_SUBSCRIPTION_CREATE_MUTATION, {

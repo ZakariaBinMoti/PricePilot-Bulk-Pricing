@@ -36,24 +36,26 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
 
 export const action = async ({ request }: ActionFunctionArgs) => {
   const { admin, session } = await authenticate.admin(request);
+  let previewFiltersKey: string | undefined;
   try {
     const form = await request.formData();
     const intent = form.get("intent");
     const input = JSON.parse(String(form.get("payload") || "{}"));
     const filters: ProductFilters = input.filters;
+    if (intent === "preview") previewFiltersKey = JSON.stringify(filters);
     if (
       !filters ||
       !Array.isArray(filters.conditions) ||
       !["all", "any"].includes(filters.matchMode ?? "")
     ) {
       return Response.json(
-        { errors: ["Choose valid product conditions."] },
+        { errors: ["Choose valid product conditions."], filtersKey: previewFiltersKey },
         { status: 400 },
       );
     }
     const filterErrors = validateFilters(filters);
     if (filterErrors.length)
-      return Response.json({ errors: filterErrors }, { status: 400 });
+      return Response.json({ errors: filterErrors, filtersKey: previewFiltersKey }, { status: 400 });
 
     if (intent === "preview") {
       const variants = await fetchAllFilteredVariants(admin, filters);
@@ -169,6 +171,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
             ? error.message
             : "Unable to process the adjustment. Please try again.",
         ],
+        filtersKey: previewFiltersKey,
       },
       { status: 400 },
     );
@@ -183,7 +186,10 @@ export default function AdjustPage() {
     <AdjustmentEditor
       {...data}
       preview={preview.data?.preview}
-      errors={[...(preview.data?.errors ?? []), ...(apply.data?.errors ?? [])]}
+      previewError={preview.data?.errors && preview.data.filtersKey
+        ? { filtersKey: preview.data.filtersKey, errors: preview.data.errors }
+        : undefined}
+      errors={apply.data?.errors}
       loadingPreview={preview.state !== "idle"}
       applying={apply.state !== "idle"}
       onPreview={(filters) =>

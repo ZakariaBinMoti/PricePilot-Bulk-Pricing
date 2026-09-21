@@ -20,6 +20,7 @@ export interface AdjustmentPreview {
 export interface AdjustmentResponse {
   preview?: AdjustmentPreview;
   errors?: string[];
+  filtersKey?: string;
 }
 
 export function validateSubmission(

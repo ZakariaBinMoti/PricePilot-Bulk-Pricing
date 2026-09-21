@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router";
-import { Banner, BlockStack, Checkbox, Modal, Page } from "@shopify/polaris";
+import { Banner, BlockStack, Checkbox, Modal, Page, Spinner } from "@shopify/polaris";
 import {
   CONDITION_FIELDS,
   conditionOperators,
@@ -36,6 +36,7 @@ interface EditorProps {
   currencyCode: string;
   isPro: boolean;
   preview?: AdjustmentPreview;
+  previewError?: { filtersKey: string; errors: string[] };
   errors?: string[];
   loadingPreview: boolean;
   applying: boolean;
@@ -82,6 +83,7 @@ export function AdjustmentEditor({
   currencyCode,
   isPro,
   preview,
+  previewError,
   errors = [],
   loadingPreview,
   applying,
@@ -129,7 +131,15 @@ export function AdjustmentEditor({
     [conditions, matchMode],
   );
   const filtersKey = JSON.stringify(filters);
-  const currentPreview = Boolean(preview && preview.filtersKey === filtersKey);
+  const filtersValid = validateFilters(filters).length === 0;
+  const previewErrors = !loadingPreview && previewError?.filtersKey === filtersKey
+    ? previewError.errors
+    : [];
+  const currentPreview = Boolean(
+    filtersValid && !loadingPreview && !previewErrors.length &&
+    preview && preview.filtersKey === filtersKey,
+  );
+  const loadingProducts = filtersValid && !currentPreview && !previewErrors.length;
   const rule = useMemo<AdjustmentRule>(
     () => ({
       adjustmentType:
@@ -148,7 +158,7 @@ export function AdjustmentEditor({
   const ruleKey = JSON.stringify(rule);
   const ruleErrors = validateRule(rule);
   const validRule = ruleErrors.length === 0;
-  const variants = preview?.variants ?? [];
+  const variants = currentPreview && preview ? preview.variants : [];
   const calculations = useMemo(
     () =>
       validRule
@@ -167,9 +177,10 @@ export function AdjustmentEditor({
     [variants],
   );
   const pages = Math.max(1, Math.ceil(variants.length / PAGE_SIZE));
+  const currentPage = Math.min(page, pages);
   const visibleVariants = variants.slice(
-    (page - 1) * PAGE_SIZE,
-    page * PAGE_SIZE,
+    (currentPage - 1) * PAGE_SIZE,
+    currentPage * PAGE_SIZE,
   );
   const busy = loadingPreview || applying;
   const canApply =
@@ -191,13 +202,13 @@ export function AdjustmentEditor({
     // An empty condition list deliberately previews the entire catalog. Once a
     // complete condition is chosen, the same automatic request refreshes the
     // table with only matching variants.
-    if (validateFilters(filters).length) return;
+    if (!filtersValid) return;
     const timer = window.setTimeout(() => {
       setConfirmOpen(false);
       onPreviewRef.current(filters);
     }, 250);
     return () => window.clearTimeout(timer);
-  }, [filtersKey]);
+  }, [filtersKey, filtersValid]);
   useEffect(() => {
     setGuardBypassed(false);
     setConfirmOpen(false);
@@ -259,10 +270,10 @@ export function AdjustmentEditor({
       backAction={{ onAction: () => navigate("/app") }}
     >
       <div className={styles.editor}>
-        {[...errors, ...localErrors].length > 0 && (
+        {[...previewErrors, ...errors, ...localErrors].length > 0 && (
           <Banner title="Please review your adjustment" tone="critical">
             <ul>
-              {[...new Set([...errors, ...localErrors])].map((error) => (
+              {[...new Set([...previewErrors, ...errors, ...localErrors])].map((error) => (
                 <li key={error}>{error}</li>
               ))}
             </ul>
@@ -558,11 +569,11 @@ export function AdjustmentEditor({
           </div>
         </section>
 
-        {preview && !currentPreview && (
+        {!filtersValid && (
           <Banner tone="warning">
             <p>
-              Complete the filter value to refresh the product list. Changes
-              are applied automatically once a filter is valid.
+              Complete the filter value to see matching products. The list
+              refreshes automatically once the filter is valid.
             </p>
           </Banner>
         )}
@@ -587,29 +598,41 @@ export function AdjustmentEditor({
         <section
           className={`${styles.card} ${styles.previewCard}`}
           aria-labelledby="preview-heading"
-          aria-busy={loadingPreview}
+          aria-busy={loadingProducts}
         >
           <div className={styles.previewHeading}>
             <h2 id="preview-heading">
               <span className={styles.liveDot} aria-hidden="true" /> Live Price
               Preview
-              {preview
+              {currentPreview
                 ? `: ${productCount} matching ${productCount === 1 ? "product" : "products"} (${variants.length} variants)`
                 : ""}
             </h2>
             <span className={styles.currency}>{currencyCode}</span>
           </div>
-          {!preview ? (
-            <div className={styles.emptyState}>
-              <div className={styles.emptyIcon} aria-hidden="true">
-                ⌕
-              </div>
-              <h3>{loadingPreview ? "Loading products" : "No products found"}</h3>
-              <p>
-                {loadingPreview
-                  ? "Loading your catalog and its current prices…"
-                  : "Your catalog preview will appear here automatically."}
-              </p>
+          {loadingProducts ? (
+            <div className={styles.emptyState} role="status" aria-live="polite">
+              <Spinner accessibilityLabel="Loading matching products" size="large" />
+              <h3>Loading matching products</h3>
+              <p>Checking your catalog and current prices for these conditions…</p>
+            </div>
+          ) : !filtersValid ? (
+            <div className={styles.emptyState} role="status">
+              <div className={styles.emptyIcon} aria-hidden="true">⌕</div>
+              <h3>Finish your filter</h3>
+              <p>Choose a value to see matching products and their prices.</p>
+            </div>
+          ) : previewErrors.length ? (
+            <div className={styles.emptyState} role="status">
+              <h3>Could not load matching products</h3>
+              <p>Check the error above, or try loading this filter again.</p>
+              <button
+                type="button"
+                className={styles.secondaryButton}
+                onClick={() => onPreviewRef.current(filters)}
+              >
+                Retry loading products
+              </button>
             </div>
           ) : variants.length === 0 ? (
             <div className={styles.emptyState}>
@@ -640,7 +663,7 @@ export function AdjustmentEditor({
                   <tbody>
                     {visibleVariants.map((variant, index) => {
                       const calculation = currentPreview
-                        ? calculations[(page - 1) * PAGE_SIZE + index]
+                        ? calculations[(currentPage - 1) * PAGE_SIZE + index]
                         : undefined;
                       return (
                         <tr
@@ -652,7 +675,7 @@ export function AdjustmentEditor({
                           }
                         >
                           <td className={styles.rowNumber}>
-                            {(page - 1) * PAGE_SIZE + index + 1}
+                            {(currentPage - 1) * PAGE_SIZE + index + 1}
                           </td>
                           <td>
                             {variant.imageUrl ? (
@@ -718,8 +741,8 @@ export function AdjustmentEditor({
               </div>
               <div className={styles.tableFooter}>
                 <p aria-live="polite">
-                  Showing {(page - 1) * PAGE_SIZE + 1}–
-                  {Math.min(page * PAGE_SIZE, variants.length)} of{" "}
+                  Showing {(currentPage - 1) * PAGE_SIZE + 1}–
+                  {Math.min(currentPage * PAGE_SIZE, variants.length)} of{" "}
                   {variants.length} variants
                   {currentPreview && validRule
                     ? ` · ${changedCount} will change`
@@ -729,18 +752,18 @@ export function AdjustmentEditor({
                   <button
                     type="button"
                     className={styles.secondaryButton}
-                    disabled={page <= 1}
+                    disabled={currentPage <= 1}
                     onClick={() => setPage((current) => current - 1)}
                   >
                     Previous
                   </button>
                   <span>
-                    {page} / {pages}
+                    {currentPage} / {pages}
                   </span>
                   <button
                     type="button"
                     className={styles.secondaryButton}
-                    disabled={page >= pages}
+                    disabled={currentPage >= pages}
                     onClick={() => setPage((current) => current + 1)}
                   >
                     Next

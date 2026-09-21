@@ -255,3 +255,85 @@ test(
     assert.equal(amount.value, "15");
   },
 );
+
+test(
+  "Changing a filter hides stale products until matching results arrive",
+  { timeout: 5000 },
+  async (t) => {
+    const options = {
+      tag: [{ label: "Summer", value: "Summer" }],
+      vendor: [], productType: [], collection: [], status: [],
+    };
+    const variant = (id, productTitle) => ({
+      id, numericId: id, productId: `product-${id}`,
+      productTitle, title: "Default Title", price: "10.00",
+      compareAtPrice: null, sku: null, inventoryQuantity: 5,
+    });
+    let setPreview;
+    let requestedFilters;
+    function Harness() {
+      const [preview, updatePreview] = useState({
+        filtersKey: JSON.stringify({ matchMode: "all", conditions: [] }),
+        fingerprint: "old",
+        variants: [variant("1", "Old product")],
+      });
+      setPreview = updatePreview;
+      return React.createElement(AdjustmentEditor, {
+        options, currencyCode: "USD", isPro: false, preview,
+        loadingPreview: false, applying: false,
+        onPreview: (filters) => { requestedFilters = filters; },
+        onApply() {},
+      });
+    }
+    const container = await mount(t, React.createElement(
+      MemoryRouter, null,
+      React.createElement(AppProvider, { i18n: {} }, React.createElement(Harness)),
+    ));
+    assert.match(container.textContent, /Old product/);
+
+    const button = [...container.querySelectorAll("button")].find((item) =>
+      item.textContent.includes("Add a filter"));
+    await act(() => button.click());
+    assert.doesNotMatch(container.textContent, /Old product/);
+    assert.match(container.textContent, /Finish your filter/);
+
+    await act(() => container.querySelector('[role="combobox"]').focus());
+    await act(() => container.querySelector('[role="option"]').click());
+    assert.doesNotMatch(container.textContent, /Old product/);
+    assert.match(container.textContent, /Loading matching products/);
+    assert.equal(container.querySelector('[aria-labelledby="preview-heading"]').getAttribute("aria-busy"), "true");
+
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 300)); });
+    await act(() => setPreview({
+      filtersKey: JSON.stringify(requestedFilters),
+      fingerprint: "new",
+      variants: [variant("2", "Summer product")],
+    }));
+    assert.match(container.textContent, /Summer product/);
+    assert.doesNotMatch(container.textContent, /Old product/);
+    assert.equal(container.querySelector('[aria-labelledby="preview-heading"]').getAttribute("aria-busy"), "false");
+  },
+);
+
+test("A failed preview shows an error state instead of an endless loader", async (t) => {
+  let retried = false;
+  const container = await mount(t, React.createElement(
+    MemoryRouter, null,
+    React.createElement(AppProvider, { i18n: {} }, React.createElement(AdjustmentEditor, {
+      options: { tag: [], vendor: [], productType: [], collection: [], status: [] },
+      currencyCode: "USD", isPro: false, loadingPreview: false, applying: false,
+      previewError: {
+        filtersKey: JSON.stringify({ matchMode: "all", conditions: [] }),
+        errors: ["Shopify catalog unavailable"],
+      },
+      onPreview() { retried = true; }, onApply() {},
+    })),
+  ));
+  assert.match(container.textContent, /Shopify catalog unavailable/);
+  assert.match(container.textContent, /Could not load matching products/);
+  assert.doesNotMatch(container.textContent, /Loading matching products/);
+  const retry = [...container.querySelectorAll("button")].find((item) =>
+    item.textContent.includes("Retry loading products"));
+  await act(() => retry.click());
+  assert.equal(retried, true);
+});

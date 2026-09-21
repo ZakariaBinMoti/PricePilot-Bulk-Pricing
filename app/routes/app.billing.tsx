@@ -6,7 +6,7 @@ import {
   useNavigation,
   useNavigate,
 } from "react-router";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import {
   Page,
   Layout,
@@ -50,7 +50,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
 };
 
 export const action = async ({ request }: ActionFunctionArgs) => {
-  const { admin, session } = await authenticate.admin(request);
+  const { admin, session, redirect } = await authenticate.admin(request);
   const formData = await request.formData();
   const intent = formData.get("intent") as string;
 
@@ -75,9 +75,8 @@ export const action = async ({ request }: ActionFunctionArgs) => {
       return Response.json({ error: error || "Failed to create subscription" }, { status: 400 });
     }
 
-    // Return the URL so the embedded page can navigate the top-level Admin
-    // window to Shopify's billing confirmation screen.
-    return Response.json({ confirmationUrl });
+    // Shopify's redirect helper handles top-level navigation from an embedded app.
+    return redirect(confirmationUrl, { target: "_top" });
   }
 
   if (intent === "downgrade_free") {
@@ -95,22 +94,13 @@ export const action = async ({ request }: ActionFunctionArgs) => {
 export default function BillingPage() {
   const { subscription, plans, justUpgraded } = useLoaderData<typeof loader>();
   const actionData = useActionData() as
-    | { confirmationUrl?: string; error?: string }
+    | { error?: string }
     | undefined;
   const submit = useSubmit();
   const navigation = useNavigation();
   const navigate = useNavigate();
   const isSubmitting = navigation.state === "submitting";
   const [confirmDowngrade, setConfirmDowngrade] = useState(false);
-
-  // Billing confirmation must open at the top level because this app is
-  // embedded inside Shopify Admin. A normal iframe navigation can appear to
-  // do nothing or leave the merchant on the billing page.
-  useEffect(() => {
-    if (actionData?.confirmationUrl) {
-      window.top?.location.assign(actionData.confirmationUrl);
-    }
-  }, [actionData]);
 
   const isPro = subscription.isPro;
 

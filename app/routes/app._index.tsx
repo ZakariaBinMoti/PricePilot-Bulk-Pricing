@@ -76,7 +76,7 @@ export default function DashboardPage() {
   return (
     <Page
       title="PricePilot ‑ Bulk Pricing"
-      subtitle="High-speed bulk price adjustments, sale scheduling & profit safeguards"
+      subtitle="Bulk price adjustments, sale scheduling & profit safeguards"
       primaryAction={{
         content: "⚡ New Adjustment",
         onAction: () => navigate("/app/adjust"),

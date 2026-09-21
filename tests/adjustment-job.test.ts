@@ -15,6 +15,7 @@ const prisma = {
     count: unexpectedCall,
     findUnique: unexpectedCall,
     update: unexpectedCall,
+    updateMany: unexpectedCall,
   },
   priceSnapshot: { createMany: unexpectedCall },
   auditLog: { create: unexpectedCall },
@@ -37,6 +38,7 @@ test("Job creation and execution preserve compare-at-only rules and snapshot onl
     Object.assign(job, data);
     return job;
   });
+  t.mock.method(prisma.priceJob, "updateMany", async () => ({ count: 1 }));
   t.mock.method(prisma.priceSnapshot, "createMany", async ({ data }: any) => {
     snapshots.push(...data);
     return { count: data.length };
@@ -106,6 +108,7 @@ test("Job creation and execution preserve compare-at-only rules and snapshot onl
 
 test("Execution rechecks safeguards before any snapshot or Shopify mutation", async (t) => {
   let status = "pending";
+  t.mock.method(prisma.priceJob, "updateMany", async () => ({ count: 1 }));
   t.mock.method(prisma.priceJob, "findUnique", async () => ({
     id: "guard-job",
     shop: "fixture.myshopify.com",
@@ -160,4 +163,12 @@ test("Execution rechecks safeguards before any snapshot or Shopify mutation", as
   assert.equal(status, "failed");
   assert.equal(mutations, 0);
   assert.equal(snapshot.mock.callCount(), 0);
+});
+
+test("A second worker cannot apply an already claimed price job", async (t) => {
+  t.mock.method(prisma.priceJob, "updateMany", async () => ({ count: 0 }));
+  const lookup = t.mock.method(prisma.priceJob, "findUnique", unexpectedCall);
+  const result = await executeJob("claimed-job", {}, "fixture.myshopify.com");
+  assert.equal(result, null);
+  assert.equal(lookup.mock.callCount(), 0);
 });

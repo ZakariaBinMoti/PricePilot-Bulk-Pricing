@@ -53,11 +53,13 @@ Only changed variants are snapshotted. Original and resulting Main Price and Com
 
 ## Plans
 
-Billing uses Shopify’s GraphQL Billing API through `appSubscriptionCreate`.
+Billing uses Shopify’s GraphQL Billing API for subscription creation and cancellation. Pro access is checked against the store's active Shopify subscription, not a URL parameter or a local database flag.
+
+Before using this billing flow, verify that the app's Partner Dashboard pricing method is **Billing API/manual pricing**. Shopify App Pricing is the default for new public apps and uses a different hosted checkout and Partner API entitlement query. If this app has Shopify App Pricing enabled, this Billing API implementation must be replaced before launch; the two charging flows must not be mixed.
 
 | Capability | Free Starter | PricePilot Pro |
 | --- | --- | --- |
-| Price adjustments | Up to 50 variants per job | Unlimited variants and products |
+| Price adjustments | Up to 50 variants per job | More than 50 variants per job (subject to Shopify API and deployment limits) |
 | Percentage and fixed pricing | Included | Included |
 | Compare-at synchronization | Included | Included |
 | Psychological rounding | Included | Included |
@@ -65,7 +67,6 @@ Billing uses Shopify’s GraphQL Billing API through `appSubscriptionCreate`.
 | Scheduled promotions | — | Included |
 | Auto-revert | — | Included |
 | Floor and ceiling safeguards | Basic validation | Full guards with bypass confirmation |
-| Processing priority | Standard | High priority |
 | Price | Free forever | `$14.99/month`, with a 7-day trial |
 
 ## Merchant workflow
@@ -85,14 +86,14 @@ PricePilot is an embedded Shopify app using Shopify Polaris, App Bridge, React R
 
 | Layer | Implementation |
 | --- | --- |
-| Framework | Shopify CLI 4.7.x, React Router 7.18.3, React 19 |
+| Framework | React Router 7.18.3 and React 18 |
 | UI | Polaris 13.x and App Bridge 4.x |
 | Server and routing | React Router SSR with authenticated Shopify requests |
-| Database | Prisma 6.x; SQLite for development and PostgreSQL for production |
-| Shopify API | GraphQL Admin API 2025-10 |
+| Database | Prisma 6.x and PostgreSQL |
+| Shopify API | GraphQL Admin API 2026-07 |
 | Sessions | Prisma session storage with refresh-token support |
-| Updates | Direct mutations for smaller jobs; Bulk Operations JSONL architecture for very large catalogs |
-| Runtime | Node.js 20 or newer |
+| Updates | Direct, chunked GraphQL mutations |
+| Runtime | Node.js 22 or newer |
 
 React Router is pinned to `7.18.3` because `@shopify/shopify-app-react-router@2.1.0` requires React Router `^7.6.2`; this also avoids the iframe/OAuth behavior experienced with Router v8. The embedded entry route redirects authenticated requests to `/app` and preserves the App Bridge headers required inside Shopify Admin.
 
@@ -118,7 +119,7 @@ React Router is pinned to `7.18.3` because `@shopify/shopify-app-react-router@2.
 - `app/services/product-filter.server.ts` — Shopify filtering, pagination, and preview retrieval
 - `app/services/adjustment-request.ts` and `job-configuration.ts` — Request validation and persisted configuration
 - `app/services/preview-fingerprint.server.ts` — Stale-preview protection
-- `app/services/bulk-updater.server.ts` — Direct update and Bulk Operations engines
+- `app/services/bulk-updater.server.ts` — Chunked direct updates and experimental Bulk Operations helpers
 - `app/services/snapshot.server.ts` — Snapshot creation and rollback mutations
 - `app/services/scheduler.server.ts` — Scheduled execution and restoration
 - `app/services/billing.server.ts` — Subscription definitions and Shopify billing
@@ -176,6 +177,15 @@ npm run deploy           # Deploy through Shopify CLI
 
 The web app is configured in `shopify.web.toml` with frontend and backend roles and the React Router development command. Shopify app metadata and scopes are defined in `shopify.app.toml`.
 
+### Production Pro setup and test
+
+1. Deploy the web app to Render with `SHOPIFY_APP_URL` set to its HTTPS URL, a persistent PostgreSQL `DATABASE_URL`, and a strong `CRON_SECRET`. Deploying Shopify app configuration does not deploy the web server.
+2. In Render, sync `render.yaml` to create the `pricepilot-scheduler` cron service. Set its `CRON_SECRET` to the **same** value as the web service. The cron calls `/api/scheduler` every minute using a bearer token; it also recovers pending immediate jobs. Inspect its Runs/logs after activation. The scheduler will not run automatically until this separate Render service exists.
+3. After confirming Billing API/manual pricing, set `SHOPIFY_BILLING_TEST=true` on a test web deployment and redeploy. Test charges are refused for non-development stores. Do not enable test billing for a merchant-facing production deployment.
+4. On the development store, choose **Plans & Billing → Start 7-Day Free Trial**, approve Shopify's test subscription, and verify Pro is shown. Try an adjustment with more than 50 variants, schedule a small sale, check the cron run and price change, then confirm auto-revert. Finally click **Downgrade to Free** and verify Shopify no longer reports an active subscription.
+
+An interrupted price adjustment is marked failed after 30 minutes instead of being replayed automatically, because replaying a percentage adjustment could change already-updated prices twice. Inspect the job and Shopify prices before retrying or rolling back.
+
 ## Verification status
 
 The automated suite currently passes, including coverage for percentage and fixed adjustments, compare-at modes, every rounding mode, the `$0.01` clamp, safeguard breaches, condition operators, all/any matching, searchable-option pagination and keyboard interaction, variant pagination, target persistence, stale previews, schedule validation, mutation payloads, mocked execution, billing limits, and snapshot/rollback fidelity.
@@ -184,7 +194,7 @@ TypeScript checking and the production build are also clean.
 
 ## Current limitations and roadmap
 
-The current preview scans paginated catalog variants and filters them locally. This is accurate for the current workflow, but very large catalogs will need an indexed or Bulk Query-based preview pipeline. Durable worker-queue processing and full Bulk Operations job dispatch remain separate follow-up work. Browser inspection against a live Shopify store is also still required for final integration verification.
+The current preview scans paginated catalog variants and filters them locally. Very large catalogs will need an indexed or Bulk Query-based preview pipeline. A durable worker queue and full Bulk Operations job dispatch remain separate follow-up work, so this app does not promise unlimited catalog throughput or priority processing. Browser testing of billing, cron, and webhooks against a live Shopify development store is still required before merchant launch.
 
 ## Shopify references
 
@@ -194,4 +204,3 @@ The current preview scans paginated catalog variants and filters them locally. T
 ## License
 
 This project is private and intended for the PricePilot Shopify app.
-

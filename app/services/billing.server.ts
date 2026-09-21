@@ -3,8 +3,8 @@
  *
  * Implements Shopify's official GraphQL Billing API for the Freemium model.
  * Free tier: Up to 50 variants per adjustment, instant rollback, basic rounding.
- * Pro tier ($14.99/month, 7-day trial): Unlimited adjustments, automated scheduling,
- * auto-revert sales, price floor/ceiling guards, priority processing.
+ * Pro tier ($14.99/month, 7-day trial): larger adjustments, automated scheduling,
+ * auto-revert sales, and price floor/ceiling guard overrides.
  */
 
 import prisma from "../db.server.ts";
@@ -36,13 +36,11 @@ export const PLANS = {
     schedulingAllowed: true,
     guardsAllowed: true,
     features: [
-      "⚡ Unlimited variants & products (no limit)",
+      "Adjust more than 50 variants per job",
       "⏰ Automated Sale Scheduling (set start date & time)",
       "↩️ Auto-Revert (automatically restore prices when sale ends)",
       "🛡️ Price Floor & Ceiling Safeguards with bypass warnings",
-      "🚀 High-speed bulk background processing",
-      "📜 Unlimited version control & price audit history",
-      "Priority customer support",
+      "Price adjustment history and manual rollback",
     ],
   },
 };
@@ -101,10 +99,37 @@ const GET_CURRENT_SUBSCRIPTION = `#graphql
   }
 `;
 
+const CANCEL_SUBSCRIPTION = `#graphql
+  mutation CancelSubscription($id: ID!) {
+    appSubscriptionCancel(id: $id) {
+      appSubscription { id status }
+      userErrors { field message }
+    }
+  }
+`;
+
+const SHOP_PLAN = `#graphql
+  query BillingTestStore {
+    shop { plan { partnerDevelopment } }
+  }
+`;
+
+async function activeProSubscription(admin: any) {
+  const response = await admin.graphql(GET_CURRENT_SUBSCRIPTION);
+  const result = await response.json();
+  if (result.errors?.length || !result.data?.currentAppInstallation) {
+    throw new Error("Could not verify the Shopify subscription.");
+  }
+  return result.data.currentAppInstallation.activeSubscriptions?.find(
+    (subscription: any) =>
+      subscription.status === "ACTIVE" && subscription.name === PLANS.PRO.name,
+  ) ?? null;
+}
+
 /**
  * Check a shop's current subscription plan.
  */
-export async function getShopSubscription(shop: string, admin?: any) {
+export async function getShopSubscription(shop: string, admin: any) {
   // First check database
   let sub = await prisma.subscription.findUnique({
     where: { shop },
@@ -120,39 +145,26 @@ export async function getShopSubscription(shop: string, admin?: any) {
     });
   }
 
-  // Always reconcile the local record with Shopify when an authenticated Admin
-  // client is available. A successful trial may not return a charge_id, so the
-  // active subscription query is the source of truth.
-  if (admin) {
-    try {
-      const response = await admin.graphql(GET_CURRENT_SUBSCRIPTION);
-      const data = await response.json();
-      const activeSubs = data.data?.currentAppInstallation?.activeSubscriptions || [];
-      const activePro = activeSubs.find(
-        (s: any) => s.status === "ACTIVE" && s.name === PLANS.PRO.name,
-      );
-
-      if (activePro) {
-        sub = await prisma.subscription.update({
-          where: { shop },
-          data: {
-            plan: "PRO",
-            status: "ACTIVE",
-            shopifyChargeId: activePro.id,
-            currentPeriodEnd: activePro.currentPeriodEnd
-              ? new Date(activePro.currentPeriodEnd)
-              : null,
-          },
-        });
-      } else if (sub.plan === "PRO") {
-        sub = await prisma.subscription.update({
-          where: { shop },
-          data: { plan: "FREE", status: "CANCELLED" },
-        });
-      }
-    } catch (e) {
-      console.warn("Could not verify Shopify subscription via GraphQL:", e);
-    }
+  // A successful trial may not return a charge_id. Shopify is authoritative;
+  // never grant Pro from a stale local record.
+  const activePro = await activeProSubscription(admin);
+  if (activePro) {
+    sub = await prisma.subscription.update({
+      where: { shop },
+      data: {
+        plan: "PRO",
+        status: "ACTIVE",
+        shopifyChargeId: activePro.id,
+        currentPeriodEnd: activePro.currentPeriodEnd
+          ? new Date(activePro.currentPeriodEnd)
+          : null,
+      },
+    });
+  } else if (sub.plan !== "FREE" || sub.shopifyChargeId) {
+    sub = await prisma.subscription.update({
+      where: { shop },
+      data: { plan: "FREE", status: "ACTIVE", shopifyChargeId: null, currentPeriodEnd: null },
+    });
   }
 
   const planDetails = sub.plan === "PRO" ? PLANS.PRO : PLANS.FREE;
@@ -176,6 +188,13 @@ export async function createProSubscription(
     process.env.NODE_ENV !== "production"
 ): Promise<{ confirmationUrl: string | null; error: string | null }> {
   try {
+    if (isTest) {
+      const planResponse = await admin.graphql(SHOP_PLAN);
+      const plan = await planResponse.json();
+      if (plan.errors?.length || plan.data?.shop?.plan?.partnerDevelopment !== true) {
+        return { confirmationUrl: null, error: "Test billing is allowed only on a Shopify development store." };
+      }
+    }
     const response = await admin.graphql(APP_SUBSCRIPTION_CREATE_MUTATION, {
       variables: {
         name: PLANS.PRO.name,
@@ -208,6 +227,9 @@ export async function createProSubscription(
       };
     }
 
+    if (result.errors?.length || !data?.confirmationUrl) {
+      return { confirmationUrl: null, error: "Shopify did not create a subscription confirmation." };
+    }
     return {
       confirmationUrl: data.confirmationUrl,
       error: null,
@@ -220,40 +242,22 @@ export async function createProSubscription(
   }
 }
 
-/**
- * Activate subscription in local database once confirmed.
- */
-export async function activateProPlan(shop: string, chargeId?: string) {
-  return prisma.subscription.upsert({
-    where: { shop },
-    update: {
-      plan: "PRO",
-      status: "ACTIVE",
-      shopifyChargeId: chargeId,
-    },
-    create: {
-      shop,
-      plan: "PRO",
-      status: "ACTIVE",
-      shopifyChargeId: chargeId,
-    },
-  });
-}
+/** Cancel with Shopify first, then reconcile local state from Shopify. */
+export async function cancelProSubscription(shop: string, admin: any) {
+  const activePro = await activeProSubscription(admin);
+  if (!activePro) return getShopSubscription(shop, admin);
 
-/**
- * Downgrade to Free plan.
- */
-export async function downgradeToFree(shop: string) {
-  return prisma.subscription.upsert({
-    where: { shop },
-    update: {
-      plan: "FREE",
-      status: "ACTIVE",
-    },
-    create: {
-      shop,
-      plan: "FREE",
-      status: "ACTIVE",
-    },
+  const response = await admin.graphql(CANCEL_SUBSCRIPTION, {
+    variables: { id: activePro.id },
   });
+  const result = await response.json();
+  const cancellation = result.data?.appSubscriptionCancel;
+  if (result.errors?.length || cancellation?.userErrors?.length ||
+      cancellation?.appSubscription?.status !== "CANCELLED") {
+    throw new Error(
+      cancellation?.userErrors?.map((error: any) => error.message).join("; ") ||
+      "Shopify did not confirm subscription cancellation.",
+    );
+  }
+  return getShopSubscription(shop, admin);
 }

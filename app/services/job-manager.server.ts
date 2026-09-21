@@ -181,11 +181,15 @@ export async function executeJob(
   admin: any,
   shop: string,
   preparedVariants?: VariantData[]
-): Promise<void> {
+): Promise<boolean | null> {
+  // A web request and the cron runner may observe the same pending job.
+  // Only one process can claim it; never replay ambiguous price writes.
+  const claim = await prisma.priceJob.updateMany({
+    where: { id: jobId, shop, status: { in: ["pending", "scheduled"] } },
+    data: { status: "processing" },
+  });
+  if (claim.count === 0) return null;
   try {
-    // Mark as processing
-    await updateJobStatus(jobId, { status: "processing" });
-
     // Load job details
     const job = await getJob(jobId);
     if (!job) throw new Error(`Job ${jobId} not found`);
@@ -211,6 +215,7 @@ export async function executeJob(
     if (variants.length === 0) {
       await updateJobStatus(jobId, {
         status: "completed",
+        scheduleStatus: job.isScheduled ? "completed" : undefined,
         totalVariants: 0,
         processedVariants: 0,
         completedAt: new Date(),
@@ -219,7 +224,7 @@ export async function executeJob(
         message: "No matching variants found",
         variantsAffected: 0,
       });
-      return;
+      return true;
     }
 
     await updateJobStatus(jobId, { totalVariants: variants.length });
@@ -255,7 +260,11 @@ export async function executeJob(
     const finalStatus = result.success ? "completed" : "failed";
     await updateJobStatus(jobId, {
       status: finalStatus,
-      scheduleStatus: job.isScheduled && job.autoRevert ? "sale_active" : undefined,
+      scheduleStatus: job.isScheduled
+        ? result.success && job.autoRevert && job.scheduledEndAt && updateItems.length > 0
+          ? "sale_active"
+          : "completed"
+        : undefined,
       processedVariants: result.updatedCount,
       failedVariants: result.failedCount,
       errorLog: result.errors.length > 0 ? JSON.stringify(result.errors) : null,
@@ -277,6 +286,7 @@ export async function executeJob(
       failedCount: result.failedCount,
       errors: result.errors.length > 0 ? result.errors : undefined,
     });
+    return result.success;
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : "Unknown error";
     await updateJobStatus(jobId, {
@@ -304,6 +314,7 @@ export async function executeRollback(
   try {
     const job = await getJob(jobId);
     if (!job) throw new Error(`Job ${jobId} not found`);
+    if (job.shop !== shop) throw new Error("Unauthorized job.");
     if (job.status === "rolled_back") throw new Error("Job already rolled back");
 
     const snapshots = await loadSnapshot(jobId);
@@ -373,7 +384,13 @@ export async function executeRollback(
     }
 
     const validItems = updateItems.filter((i) => i.variant.productId);
+    if (validItems.length !== updateItems.length) {
+      throw new Error("Could not resolve every variant for rollback. No prices were changed.");
+    }
     const result = await executeDirectUpdates(admin, validItems);
+    if (!result.success) {
+      throw new Error(`Rollback partially failed: ${result.errors.map((error) => error.message).join("; ")}`);
+    }
 
     await updateJobStatus(jobId, {
       status: "rolled_back",

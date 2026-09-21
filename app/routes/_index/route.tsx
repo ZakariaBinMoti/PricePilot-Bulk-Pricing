@@ -19,8 +19,8 @@ export default function AppIndex() {
       <div className={styles.content}>
         <h1 className={styles.heading}>Price Adjuster</h1>
         <p className={styles.text}>
-          Bulk price management for Shopify. Adjust thousands of product prices
-          in one click with automatic Compare-at price sync, smart rounding,
+          Bulk price management for Shopify. Adjust product prices
+          with automatic Compare-at price sync, smart rounding,
           and instant rollback.
         </p>
       </div>

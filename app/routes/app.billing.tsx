@@ -6,7 +6,7 @@ import {
   useNavigation,
   useNavigate,
 } from "react-router";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import {
   Page,
   Layout,
@@ -21,13 +21,13 @@ import {
   Divider,
   List,
   InlineGrid,
+  Modal,
 } from "@shopify/polaris";
 import { authenticate } from "../shopify.server";
 import {
   getShopSubscription,
   createProSubscription,
-  activateProPlan,
-  downgradeToFree,
+  cancelProSubscription,
   PLANS,
 } from "../services/billing.server";
 
@@ -35,11 +35,9 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   const { admin, session } = await authenticate.admin(request);
   const url = new URL(request.url);
 
-  // Check if returning from Shopify billing confirmation
+  // The return parameter is only a hint for the UI. Shopify's active
+  // subscriptions query, not the URL, determines whether Pro is enabled.
   const chargeId = url.searchParams.get("charge_id");
-  if (chargeId) {
-    await activateProPlan(session.shop, chargeId);
-  }
 
   const subscription = await getShopSubscription(session.shop, admin);
 
@@ -47,7 +45,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     subscription,
     plans: PLANS,
     shop: session.shop,
-    justUpgraded: Boolean(chargeId),
+    justUpgraded: Boolean(chargeId) && subscription.isPro,
   };
 };
 
@@ -56,10 +54,17 @@ export const action = async ({ request }: ActionFunctionArgs) => {
   const formData = await request.formData();
   const intent = formData.get("intent") as string;
 
-  const url = new URL(request.url);
-  const returnUrl = `${url.origin}/app/billing`;
+  const appUrl = process.env.SHOPIFY_APP_URL || process.env.RENDER_EXTERNAL_URL;
+  if (!appUrl) {
+    return Response.json({ error: "The public app URL is not configured." }, { status: 503 });
+  }
+  const returnUrl = new URL("/app/billing", appUrl).toString();
 
   if (intent === "upgrade_pro") {
+    const current = await getShopSubscription(session.shop, admin);
+    if (current.isPro) {
+      return Response.json({ error: "Pro is already active for this store." }, { status: 409 });
+    }
     const { confirmationUrl, error } = await createProSubscription(
       admin,
       session.shop,
@@ -76,8 +81,12 @@ export const action = async ({ request }: ActionFunctionArgs) => {
   }
 
   if (intent === "downgrade_free") {
-    await downgradeToFree(session.shop);
-    return Response.json({ success: true, message: "Downgraded to Free plan." });
+    try {
+      await cancelProSubscription(session.shop, admin);
+      return Response.json({ success: true, message: "Shopify subscription cancelled. Free plan is active." });
+    } catch (error) {
+      return Response.json({ error: error instanceof Error ? error.message : "Cancellation failed." }, { status: 502 });
+    }
   }
 
   return Response.json({ error: "Invalid action" }, { status: 400 });
@@ -92,6 +101,7 @@ export default function BillingPage() {
   const navigation = useNavigation();
   const navigate = useNavigate();
   const isSubmitting = navigation.state === "submitting";
+  const [confirmDowngrade, setConfirmDowngrade] = useState(false);
 
   // Billing confirmation must open at the top level because this app is
   // embedded inside Shopify Admin. A normal iframe navigation can appear to
@@ -111,6 +121,7 @@ export default function BillingPage() {
   };
 
   const handleDowngrade = () => {
+    setConfirmDowngrade(false);
     const formData = new FormData();
     formData.set("intent", "downgrade_free");
     submit(formData, { method: "post" });
@@ -132,7 +143,7 @@ export default function BillingPage() {
           <Banner title="Welcome to PricePilot Pro! 🎉" tone="success">
             <p>
               Your 7-day free trial is now active. You have full access to automated
-              sale scheduling, auto-revert rollbacks, and unlimited variant edits.
+              sale scheduling, auto-revert rollbacks, and larger variant edits.
             </p>
           </Banner>
         )}
@@ -145,7 +156,7 @@ export default function BillingPage() {
           <p>
             {isPro
               ? "All features including sale scheduling, auto-revert, and price safeguards are unlocked."
-              : "Upgrade to Pro to unlock sale scheduling, auto-reverting flash sales, and unlimited product updates."}
+              : "Upgrade to Pro to unlock sale scheduling, auto-reverting flash sales, and larger product updates."}
           </p>
         </Banner>
 
@@ -185,7 +196,7 @@ export default function BillingPage() {
 
               <Box paddingBlockStart="400">
                 {isPro ? (
-                  <Button onClick={handleDowngrade} loading={isSubmitting}>
+                  <Button onClick={() => setConfirmDowngrade(true)} loading={isSubmitting}>
                     Downgrade to Free
                   </Button>
                 ) : (
@@ -248,6 +259,18 @@ export default function BillingPage() {
             </BlockStack>
           </Card>
         </InlineGrid>
+        <Modal
+          open={confirmDowngrade}
+          onClose={() => setConfirmDowngrade(false)}
+          title="Cancel Pro subscription?"
+          primaryAction={{ content: "Cancel Pro subscription", onAction: handleDowngrade, loading: isSubmitting }}
+          secondaryActions={[{ content: "Keep Pro", onAction: () => setConfirmDowngrade(false) }]}
+        >
+          <Modal.Section>
+            Shopify will stop the Pro subscription. Pro features may end immediately,
+            and this cancellation does not request a prorated credit.
+          </Modal.Section>
+        </Modal>
       </BlockStack>
     </Page>
   );

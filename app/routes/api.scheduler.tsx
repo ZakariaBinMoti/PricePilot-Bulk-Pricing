@@ -7,9 +7,7 @@ import { unauthenticated } from "../shopify.server";
  * Can be called by periodic cron tasks (e.g. Fly.io Machines, Vercel Cron, Google Cloud Scheduler, or internal timers).
  */
 export const loader = async ({ request }: LoaderFunctionArgs) => {
-  const url = new URL(request.url);
   const authHeader = request.headers.get("authorization");
-  const querySecret = url.searchParams.get("secret");
   const cronSecret = process.env.CRON_SECRET;
 
   if (!cronSecret) {
@@ -17,7 +15,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     return Response.json({ error: "Scheduler is not configured" }, { status: 503 });
   }
 
-  if (querySecret !== cronSecret && authHeader !== `Bearer ${cronSecret}`) {
+  if (authHeader !== `Bearer ${cronSecret}`) {
     return Response.json({ error: "Unauthorized" }, { status: 401 });
   }
 

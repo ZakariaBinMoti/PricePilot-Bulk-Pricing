@@ -1,0 +1,14 @@
+# Sync this Blueprint in Render after deploying the web service. The cron job
+# calls the authenticated scheduler once per minute (Render schedules in UTC).
+services:
+  - type: cron
+    name: pricepilot-scheduler
+    runtime: node
+    schedule: "* * * * *"
+    buildCommand: npm ci
+    startCommand: node scripts/run-scheduler.mjs
+    envVars:
+      - key: SHOPIFY_APP_URL
+        value: https://pricepilot-bulk-pricing.onrender.com
+      - key: CRON_SECRET
+        sync: false

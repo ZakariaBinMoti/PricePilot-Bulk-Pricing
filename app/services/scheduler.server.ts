@@ -8,16 +8,16 @@
  *  - Periodic runner to evaluate pending start and pending revert events.
  */
 
-import prisma from "../db.server";
+import prisma from "../db.server.ts";
 import {
   executeJob,
   executeRollback,
   resolveCampaignName,
-  updateJobStatus,
-} from "./job-manager.server";
+} from "./job-manager.server.ts";
 import type { AdjustmentRule } from "./price-calculator";
 import type { ProductFilters } from "./product-filter.server";
-import { serializeJobFilters } from "./job-configuration";
+import { serializeJobFilters } from "./job-configuration.ts";
+import { getShopSubscription } from "./billing.server.ts";
 
 export interface ScheduleOptions {
   shop: string;
@@ -116,10 +116,48 @@ export async function cancelScheduledJob(jobId: string, shop: string): Promise<v
 export async function processDueScheduledJobs(adminFactory: (shop: string) => Promise<any>): Promise<{
   startedCount: number;
   revertedCount: number;
+  failedCount: number;
 }> {
   const now = new Date();
   let startedCount = 0;
   let revertedCount = 0;
+  let failedCount = 0;
+
+  // An interrupted adjustment cannot be replayed safely: a percentage edit
+  // might already have reached Shopify. Surface it for manual inspection.
+  const staleBefore = new Date(now.getTime() - 30 * 60 * 1000);
+  const staleProcessing = await prisma.priceJob.updateMany({
+    where: { status: "processing", updatedAt: { lt: staleBefore } },
+    data: {
+      status: "failed",
+      errorLog: JSON.stringify([{ message: "Worker stopped during an update. Inspect Shopify prices before retrying or rolling back." }]),
+    },
+  });
+  failedCount += staleProcessing.count;
+  await prisma.priceJob.updateMany({
+    where: { status: "completed", scheduleStatus: "reverting", updatedAt: { lt: staleBefore } },
+    data: { scheduleStatus: "sale_active" },
+  });
+
+  // Immediate jobs are also picked up by the cron runner if the web process
+  // stopped after creating the job but before it could start execution.
+  const pendingJobs = await prisma.priceJob.findMany({
+    where: { isScheduled: false, status: "pending" },
+    take: 20,
+    orderBy: { createdAt: "asc" },
+  });
+  for (const job of pendingJobs) {
+    try {
+      const admin = await adminFactory(job.shop);
+      if (!admin) throw new Error("No Admin API client available.");
+      const executed = await executeJob(job.id, admin, job.shop);
+      if (executed === true) startedCount++;
+      else if (executed === false) failedCount++;
+    } catch (error) {
+      failedCount++;
+      console.error(`Failed to process pending job ${job.id}:`, error);
+    }
+  }
 
   // 1. Find jobs waiting to start where scheduledStartAt <= now
   const dueToStart = await prisma.priceJob.findMany({
@@ -134,26 +172,20 @@ export async function processDueScheduledJobs(adminFactory: (shop: string) => Pr
   for (const job of dueToStart) {
     try {
       const admin = await adminFactory(job.shop);
-      if (!admin) continue;
-
-      // Mark as active and execute
-      await updateJobStatus(job.id, {
-        status: "processing",
-        scheduleStatus: job.autoRevert ? "sale_active" : "completed",
-      });
-
-      await executeJob(job.id, admin, job.shop);
-
-      // Once completed, update schedule status
-      await prisma.priceJob.update({
-        where: { id: job.id },
-        data: {
-          scheduleStatus: job.autoRevert && job.scheduledEndAt ? "sale_active" : "completed",
-        },
-      });
-
-      startedCount++;
+      if (!admin) throw new Error("No Admin API client available.");
+      const subscription = await getShopSubscription(job.shop, admin);
+      if (!subscription.isPro) {
+        await prisma.priceJob.updateMany({
+          where: { id: job.id, shop: job.shop, status: "scheduled" },
+          data: { status: "cancelled", scheduleStatus: "cancelled" },
+        });
+        continue;
+      }
+      const executed = await executeJob(job.id, admin, job.shop);
+      if (executed === true) startedCount++;
+      else if (executed === false) failedCount++;
     } catch (err) {
+      failedCount++;
       console.error(`Failed to trigger scheduled start for job ${job.id}:`, err);
     }
   }
@@ -163,6 +195,7 @@ export async function processDueScheduledJobs(adminFactory: (shop: string) => Pr
     where: {
       isScheduled: true,
       autoRevert: true,
+      status: "completed",
       scheduleStatus: "sale_active",
       scheduledEndAt: { lte: now },
     },
@@ -170,8 +203,13 @@ export async function processDueScheduledJobs(adminFactory: (shop: string) => Pr
 
   for (const job of dueToRevert) {
     try {
+      const claim = await prisma.priceJob.updateMany({
+        where: { id: job.id, shop: job.shop, status: "completed", scheduleStatus: "sale_active" },
+        data: { scheduleStatus: "reverting" },
+      });
+      if (claim.count === 0) continue;
       const admin = await adminFactory(job.shop);
-      if (!admin) continue;
+      if (!admin) throw new Error("No Admin API client available.");
 
       await executeRollback(job.id, admin, job.shop);
 
@@ -193,9 +231,15 @@ export async function processDueScheduledJobs(adminFactory: (shop: string) => Pr
 
       revertedCount++;
     } catch (err) {
+      failedCount++;
+      // Restoring snapshot values is idempotent; a later cron run can retry.
+      await prisma.priceJob.updateMany({
+        where: { id: job.id, scheduleStatus: "reverting" },
+        data: { scheduleStatus: "sale_active" },
+      });
       console.error(`Failed to trigger auto-revert for job ${job.id}:`, err);
     }
   }
 
-  return { startedCount, revertedCount };
+  return { startedCount, revertedCount, failedCount };
 }

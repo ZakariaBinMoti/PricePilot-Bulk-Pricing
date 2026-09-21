@@ -2,9 +2,8 @@
  * Bulk Updater Service
  *
  * Handles submitting price updates to Shopify via the GraphQL Admin API.
- * Uses two strategies:
- *   - Small batches (<100 variants): Direct `productVariantsBulkUpdate` mutation
- *   - Large batches (100+ variants): Shopify Bulk Operations API with JSONL
+ * Production jobs use chunked direct `productVariantsBulkUpdate` mutations.
+ * Bulk Operations helpers below are experimental and not dispatched by jobs.
  */
 
 import type { VariantData } from "./product-filter.server";
@@ -174,7 +173,7 @@ async function updateProductVariantsDirect(
 }
 
 /**
- * Execute direct updates for small batches (<100 variants).
+ * Execute direct updates in per-product batches.
  * Groups by product and calls `productVariantsBulkUpdate` for each group.
  */
 export async function executeDirectUpdates(

@@ -99,6 +99,12 @@ const GET_CURRENT_SUBSCRIPTION = `#graphql
   }
 `;
 
+const GET_APP_HANDLE = `#graphql
+  query BillingReturnAppHandle {
+    app { handle }
+  }
+`;
+
 const CANCEL_SUBSCRIPTION = `#graphql
   mutation CancelSubscription($id: ID!) {
     appSubscriptionCancel(id: $id) {
@@ -174,6 +180,22 @@ export async function getShopSubscription(shop: string, admin: any) {
     isPro: sub.plan === "PRO" && sub.status === "ACTIVE",
     planDetails,
   };
+}
+
+/** Return to the embedded billing page in Shopify Admin after approval. */
+export async function getBillingReturnUrl(admin: any, shop: string): Promise<string> {
+  const shopHandle = /^([a-z0-9][a-z0-9-]*)\.myshopify\.com$/i.exec(shop)?.[1];
+  if (!shopHandle) throw new Error("Invalid Shopify shop domain.");
+
+  const response = await admin.graphql(GET_APP_HANDLE);
+  const result = await response.json();
+  const appHandle = result.data?.app?.handle;
+  if (result.errors?.length || typeof appHandle !== "string" ||
+      !/^[a-z0-9][a-z0-9-]*$/i.test(appHandle)) {
+    throw new Error("Could not determine the Shopify app handle.");
+  }
+
+  return `https://admin.shopify.com/store/${shopHandle}/apps/${appHandle}/app/billing`;
 }
 
 /**

@@ -11,7 +11,7 @@ const prisma = {
   },
 };
 globalThis.prisma = prisma as unknown as PrismaClient;
-const { getShopSubscription, cancelProSubscription, createProSubscription } =
+const { getShopSubscription, getBillingReturnUrl, cancelProSubscription, createProSubscription } =
   await import("../app/services/billing.server.ts");
 
 function adminWith(active: any[] = []) {
@@ -83,6 +83,22 @@ test("Billing test flag is sent to Shopify", async () => {
   assert.equal(variables.test, true);
   assert.equal(variables.trialDays, 7);
   assert.equal(result.confirmationUrl, "https://shopify.test/confirm");
+});
+
+test("Billing approval returns to the embedded Shopify Admin page", async () => {
+  const returnUrl = await getBillingReturnUrl({
+    graphql: async (query: string) => {
+      assert.match(query, /app\s*\{\s*handle\s*\}/);
+      return { json: async () => ({ data: { app: { handle: "pricepilot-bulk-pricing-test" } } }) };
+    },
+  }, "pricepilot-bulk-pricing-test.myshopify.com");
+  assert.equal(returnUrl, "https://admin.shopify.com/store/pricepilot-bulk-pricing-test/apps/pricepilot-bulk-pricing-test/app/billing");
+});
+
+test("Billing return link fails closed when Shopify does not provide an app handle", async () => {
+  await assert.rejects(getBillingReturnUrl({
+    graphql: async () => ({ json: async () => ({ data: { app: { handle: null } } }) }),
+  }, "fixture.myshopify.com"), /app handle/);
 });
 
 test("A test subscription cannot be created for a non-development store", async () => {

@@ -26,6 +26,7 @@ import {
 import { authenticate } from "../shopify.server";
 import {
   getShopSubscription,
+  getBillingReturnUrl,
   createProSubscription,
   cancelProSubscription,
   PLANS,
@@ -54,16 +55,16 @@ export const action = async ({ request }: ActionFunctionArgs) => {
   const formData = await request.formData();
   const intent = formData.get("intent") as string;
 
-  const appUrl = process.env.SHOPIFY_APP_URL || process.env.RENDER_EXTERNAL_URL;
-  if (!appUrl) {
-    return Response.json({ error: "The public app URL is not configured." }, { status: 503 });
-  }
-  const returnUrl = new URL("/app/billing", appUrl).toString();
-
   if (intent === "upgrade_pro") {
     const current = await getShopSubscription(session.shop, admin);
     if (current.isPro) {
       return Response.json({ error: "Pro is already active for this store." }, { status: 409 });
+    }
+    let returnUrl: string;
+    try {
+      returnUrl = await getBillingReturnUrl(admin, session.shop);
+    } catch {
+      return Response.json({ error: "Could not prepare the Shopify billing return link." }, { status: 502 });
     }
     const { confirmationUrl, error } = await createProSubscription(
       admin,

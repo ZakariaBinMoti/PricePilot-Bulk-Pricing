@@ -40,9 +40,14 @@
 }
 
 .menuItem {
+  background: transparent;
+  border: 0;
   border-radius: var(--p-border-radius-100);
   color: var(--p-color-text-emphasis);
+  cursor: pointer;
+  font: inherit;
   padding: var(--p-space-150) var(--p-space-200);
+  text-align: left;
   text-decoration: none;
 }
 
@@ -51,4 +56,18 @@
   background: var(--p-color-bg-fill-hover);
   color: var(--p-color-text-emphasis);
   outline: none;
+}
+
+.dangerMenuItem {
+  color: var(--p-color-text-critical, #b42318);
+}
+
+.dangerMenuItem:hover,
+.dangerMenuItem:focus-visible {
+  color: var(--p-color-text-critical, #b42318);
+}
+
+.menuItem:disabled {
+  color: var(--p-color-text-disabled, #8a8a8a);
+  cursor: not-allowed;
 }

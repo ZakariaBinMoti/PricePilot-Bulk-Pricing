@@ -173,6 +173,37 @@ export async function getJobsForShop(
   };
 }
 
+export class JobNotDeletableError extends Error {}
+
+/** Delete a finished adjustment without interrupting a job or pending auto-revert. */
+export async function deleteJobForShop(jobId: string, shop: string): Promise<void> {
+  await prisma.$transaction(async (tx) => {
+    const result = await tx.priceJob.deleteMany({
+      where: {
+        id: jobId,
+        shop,
+        status: { in: ["completed", "failed", "rolled_back", "cancelled"] },
+        OR: [
+          { isScheduled: false },
+          { scheduleStatus: { in: ["completed", "cancelled"] } },
+        ],
+      },
+    });
+    if (result.count !== 1) {
+      throw new JobNotDeletableError("This adjustment cannot be deleted while it is active, or it no longer exists.");
+    }
+
+    // Price snapshots cascade with the job; keep an audit record of the deletion.
+    await tx.auditLog.create({
+      data: {
+        shop,
+        action: "adjustment_deleted",
+        details: JSON.stringify({ deletedJobId: jobId }),
+      },
+    });
+  });
+}
+
 /**
  * Execute a price adjustment job.
  */

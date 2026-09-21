@@ -33,6 +33,8 @@ const { SearchableConditionValue } =
   await import("../../app/components/searchable-condition-value.tsx");
 const { AdjustmentEditor } =
   await import("../../app/components/adjustment-editor.tsx");
+const { HistoryActions } =
+  await import("../../app/components/history-actions.tsx");
 const { AppProvider } = await import("@shopify/polaris");
 const { MemoryRouter } = await import("react-router");
 
@@ -336,4 +338,39 @@ test("A failed preview shows an error state instead of an endless loader", async
     item.textContent.includes("Retry loading products"));
   await act(() => retry.click());
   assert.equal(retried, true);
+});
+
+test("History menu offers deletion for finished jobs and passes the selected job", async (t) => {
+  let selected;
+  const job = {
+    id: "job-1", status: "completed", isScheduled: false,
+    filters: JSON.stringify({ campaignName: "Autumn sale" }),
+  };
+  const container = await mount(t,
+    React.createElement(AppProvider, { i18n: {} },
+      React.createElement(MemoryRouter, null,
+        React.createElement(HistoryActions, { job, onDelete: (item) => { selected = item; } }))));
+
+  await act(() => container.querySelector('button[aria-label="Actions for Autumn sale"]').click());
+  const deleteItem = [...document.querySelectorAll('[role="menuitem"]')].find((item) =>
+    item.textContent.includes("Delete adjustment"));
+  assert.ok(deleteItem);
+  assert.equal(deleteItem.disabled, false);
+  await act(() => deleteItem.click());
+  assert.equal(selected, job);
+});
+
+test("History menu disables deletion while a sale awaits auto-revert", async (t) => {
+  const job = {
+    id: "sale-1", status: "completed", isScheduled: true,
+    scheduleStatus: "sale_active", filters: "{}",
+  };
+  const container = await mount(t,
+    React.createElement(AppProvider, { i18n: {} },
+      React.createElement(MemoryRouter, null,
+        React.createElement(HistoryActions, { job, onDelete: () => { throw new Error("Must not delete active sale"); } }))));
+  await act(() => container.querySelector('button[aria-label="Actions for this adjustment"]').click());
+  const deleteItem = [...document.querySelectorAll('[role="menuitem"]')].find((item) =>
+    item.textContent.includes("Delete adjustment"));
+  assert.equal(deleteItem.disabled, true);
 });

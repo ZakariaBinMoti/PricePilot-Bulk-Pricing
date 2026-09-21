@@ -16,13 +16,55 @@ const prisma = {
     findUnique: unexpectedCall,
     update: unexpectedCall,
     updateMany: unexpectedCall,
+    deleteMany: unexpectedCall,
   },
   priceSnapshot: { createMany: unexpectedCall },
   auditLog: { create: unexpectedCall },
+  $transaction: unexpectedCall,
 };
 globalThis.prisma = prisma as unknown as PrismaClient;
-const { createJob, executeJob } =
+const { createJob, executeJob, deleteJobForShop } =
   await import("../app/services/job-manager.server.ts");
+
+test("Deleting a finished adjustment is scoped to the shop and leaves an audit event", async (t) => {
+  let deleted = false;
+  let audited = false;
+  t.mock.method(prisma, "$transaction", async (operation: any) => operation(prisma));
+  t.mock.method(prisma.priceJob, "deleteMany", async ({ where }: any) => {
+    assert.equal(where.id, "finished-job");
+    assert.equal(where.shop, "fixture.myshopify.com");
+    assert.deepEqual(where.status.in, ["completed", "failed", "rolled_back", "cancelled"]);
+    assert.deepEqual(where.OR, [
+      { isScheduled: false },
+      { scheduleStatus: { in: ["completed", "cancelled"] } },
+    ]);
+    deleted = true;
+    return { count: 1 };
+  });
+  t.mock.method(prisma.auditLog, "create", async ({ data }: any) => {
+    assert.equal(data.shop, "fixture.myshopify.com");
+    assert.equal(data.action, "adjustment_deleted");
+    assert.deepEqual(JSON.parse(data.details), { deletedJobId: "finished-job" });
+    audited = true;
+    return {};
+  });
+
+  await deleteJobForShop("finished-job", "fixture.myshopify.com");
+  assert.equal(deleted, true);
+  assert.equal(audited, true);
+});
+
+test("A job not eligible for deletion is not audited as deleted", async (t) => {
+  t.mock.method(prisma, "$transaction", async (operation: any) => operation(prisma));
+  t.mock.method(prisma.priceJob, "deleteMany", async () => ({ count: 0 }));
+  t.mock.method(prisma.auditLog, "create", async () => {
+    throw new Error("An audit event must not be created for a rejected deletion.");
+  });
+  await assert.rejects(
+    deleteJobForShop("active-job", "fixture.myshopify.com"),
+    /cannot be deleted while it is active/,
+  );
+});
 
 test("Job creation and execution preserve compare-at-only rules and snapshot only changes", async (t) => {
   let job: any;

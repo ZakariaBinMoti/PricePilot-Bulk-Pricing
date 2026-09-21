@@ -6,7 +6,7 @@ import {
   useNavigation,
   useNavigate,
 } from "react-router";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   Page,
   Layout,
@@ -50,7 +50,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
 };
 
 export const action = async ({ request }: ActionFunctionArgs) => {
-  const { admin, session, redirect } = await authenticate.admin(request);
+  const { admin, session } = await authenticate.admin(request);
   const formData = await request.formData();
   const intent = formData.get("intent") as string;
 
@@ -75,8 +75,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
       return Response.json({ error: error || "Failed to create subscription" }, { status: 400 });
     }
 
-    // Shopify's redirect helper handles top-level navigation from an embedded app.
-    return redirect(confirmationUrl, { target: "_top" });
+    return Response.json({ confirmationUrl });
   }
 
   if (intent === "downgrade_free") {
@@ -94,13 +93,20 @@ export const action = async ({ request }: ActionFunctionArgs) => {
 export default function BillingPage() {
   const { subscription, plans, justUpgraded } = useLoaderData<typeof loader>();
   const actionData = useActionData() as
-    | { error?: string }
+    | { confirmationUrl?: string; error?: string }
     | undefined;
   const submit = useSubmit();
   const navigation = useNavigation();
   const navigate = useNavigate();
   const isSubmitting = navigation.state === "submitting";
   const [confirmDowngrade, setConfirmDowngrade] = useState(false);
+
+  useEffect(() => {
+    if (actionData?.confirmationUrl) {
+      // App Bridge supports top-level navigation through window.open.
+      window.open(actionData.confirmationUrl, "_top");
+    }
+  }, [actionData]);
 
   const isPro = subscription.isPro;
 
@@ -127,6 +133,17 @@ export default function BillingPage() {
         {actionData?.error && (
           <Banner title="Unable to start the Pro trial" tone="critical">
             <p>{actionData.error}</p>
+          </Banner>
+        )}
+        {actionData?.confirmationUrl && (
+          <Banner title="Continue to Shopify billing" tone="info">
+            <p>
+              If the approval page did not open,{" "}
+              <a href={actionData.confirmationUrl} target="_top">
+                open it here
+              </a>
+              .
+            </p>
           </Banner>
         )}
         {justUpgraded && (
